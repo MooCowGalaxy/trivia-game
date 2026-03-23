@@ -1,0 +1,184 @@
+{
+  "gameId": "lucid",
+  "settings": {
+    "hostDiscordId": "594239049884237836",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 1,
+      "type": "speed_math",
+      "title": "Speed Math",
+      "description": "do it as fast as you can",
+      "timerSeconds": 30,
+      "basePoints": 750,
+      "speedBonusMax": 750,
+      "generatorParams": {
+        "questionCount": 10,
+        "operations": ["+", "-", "*", "/"],
+        "maxOperandAddSub": 100,
+        "maxOperandMulDiv": 15,
+        "maxAnswer": 9999,
+        "allowNegativeResults": false
+      }
+    },
+    {
+      "roundNumber": 2,
+      "type": "pattern",
+      "title": "General Trivia",
+      "description": "just pick the right answer (multiple choice)",
+      "timerSeconds": 10,
+      "basePoints": 200,
+      "speedBonusMax": 150,
+      "questions": [
+        {
+          "id": "r2q1",
+          "text": "What is this structure?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/trivia_q1_73346.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["Golden Gate Bridge", "Eiffel Tower", "Sydney Harbour Bridge", "Brooklyn Bridge"],
+          "correctAnswer": "Eiffel Tower"
+        },
+        {
+          "id": "r2q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/trivia_q2_239823.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["25k Pro", "50k Flex", "50k Pro", "100k Pro"],
+          "correctAnswer": "50k Pro"
+        },
+        {
+          "id": "r2q3",
+          "text": "Which U.S. city is this a satellite view of?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/trivia_q3_92743.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["Chicago, IL", "San Francisco, CA", "Miami, FL", "Boston, MA"],
+          "correctAnswer": "Chicago, IL"
+        },
+        {
+          "id": "r2q4",
+          "text": "What animal left these tracks?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/trivia_q4_107849.jpg"
+          },
+          "answerType": "multiple_choice",
+          "options": ["Pronghorn", "Sheep", "Elk", "Deer"],
+          "correctAnswer": "Deer"
+        },
+        {
+          "id": "r2q5",
+          "text": "What decade was this picture taken from?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/trivia_q5_901272.jpg"
+          },
+          "answerType": "multiple_choice",
+          "options": ["1960s", "1970s", "1980s", "1990s"],
+          "correctAnswer": "1980s"
+        }
+      ]
+    },
+    {
+      "roundNumber": 3,
+      "type": "visual_spatial",
+      "title": "Numeric Questions",
+      "description": "Count, estimate, think, idk",
+      "timerSeconds": 10,
+      "basePoints": 200,
+      "speedBonusMax": 150,
+      "questions": [
+        {
+          "id": "r3q1",
+          "type": "How many cubes are in this structure?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/count_q1_901781.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 9,
+          "tolerance": 0
+        },
+        {
+          "id": "r3q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/count_q2_1079.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 10,
+          "tolerance": 0
+        },
+        {
+          "id": "r3q3",
+          "text": "What is the sum of these dice?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/count_q3_207811.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 20,
+          "tolerance": 0
+        }
+      ]
+    },
+    {
+      "roundNumber": 4,
+      "type": "mixed_logic_fermi",
+      "title": "Guesstimate",
+      "description": "Guess the numerical answer on these next set of questions, you don't have much time!",
+      "timerSeconds": 8,
+      "basePoints": 300,
+      "speedBonusMax": 75,
+      "questions": [
+        {
+          "id": "r4q1",
+          "text": "How many jelly beans are in this jar?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/fermi_q1_081230.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 1623
+        },
+        {
+          "id": "r4q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/fermi_q2_010101.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 49470
+        },
+        {
+          "id": "r4q3",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/fermi_q3_41208.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 13770
+        },
+        {
+          "id": "r4q4",
+          "text": "How many books are in this picture?",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/fermi_q4_130.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 56
+        }
+      ]
+    }
+  ]
+}

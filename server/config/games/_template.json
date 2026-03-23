@@ -1,0 +1,168 @@
+{
+  "gameId": "game-template",
+  "settings": {
+    "hostDiscordId": "YOUR_DISCORD_ID",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 1,
+      "type": "speed_math",
+      "title": "Speed Math",
+      "description": "Pure mental math. No calculators!",
+      "timerSeconds": 30,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "generatorParams": {
+        "questionCount": 10,
+        "operations": ["+", "-", "*", "/"],
+        "maxOperandAddSub": 50,
+        "maxOperandMulDiv": 12,
+        "maxAnswer": 150,
+        "allowNegativeResults": false
+      }
+    },
+    {
+      "roundNumber": 2,
+      "type": "pattern",
+      "title": "Pattern Recognition",
+      "description": "Spot the pattern and pick the right answer.",
+      "timerSeconds": 10,
+      "basePoints": 150,
+      "speedBonusMax": 75,
+      "questions": [
+        {
+          "id": "r2q1",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "C"
+        },
+        {
+          "id": "r2q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "C"
+        },
+        {
+          "id": "r2q3",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "C"
+        },
+        {
+          "id": "r2q4",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "C"
+        },
+        {
+          "id": "r2q5",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "C"
+        }
+      ]
+    },
+    {
+      "roundNumber": 3,
+      "type": "visual_spatial",
+      "title": "Visual Spatial",
+      "description": "Count, estimate, and think spatially.",
+      "timerSeconds": 25,
+      "basePoints": 200,
+      "speedBonusMax": 100,
+      "questions": [
+        {
+          "id": "r3q1",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 7,
+          "tolerance": 0
+        },
+        {
+          "id": "r3q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 12,
+          "tolerance": 0
+        },
+        {
+          "id": "r3q3",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "exact_number",
+          "correctAnswer": 5,
+          "tolerance": 0
+        }
+      ]
+    },
+    {
+      "roundNumber": 4,
+      "type": "mixed_logic_fermi",
+      "title": "Logic & Estimation",
+      "description": "A mix of logic puzzles and Fermi estimation.",
+      "timerSeconds": 30,
+      "basePoints": 250,
+      "speedBonusMax": 75,
+      "questions": [
+        {
+          "id": "r4q1",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "multiple_choice",
+          "options": ["Red square", "Blue circle", "Green triangle", "Yellow star"],
+          "correctAnswer": "Blue circle"
+        },
+        {
+          "id": "r4q2",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 4200
+        },
+        {
+          "id": "r4q3",
+          "display": {
+            "type": "image",
+            "src": "/assets/questions/test.png"
+          },
+          "answerType": "fermi",
+          "correctAnswer": 85000
+        }
+      ]
+    }
+  ]
+}
