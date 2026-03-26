@@ -4,7 +4,7 @@ import { useGameState } from "@/hooks/useGameState"
 import { Button } from "@/components/ui/button"
 
 export function SpectatorBanner() {
-  const { user, login, devMode, devLogin } = useAuth()
+  const { user, login, devMode } = useAuth()
   const { gameState } = useGameState()
 
   if (!user || !gameState) return null
