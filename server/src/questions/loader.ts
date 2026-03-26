@@ -41,6 +41,7 @@ const RoundConfigSchema = z
     type: z.enum(['speed_math', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
     title: z.string(),
     description: z.string().optional(),
+    typeLabel: z.string().optional(),
     timerSeconds: z.number().positive(),
     basePoints: z.number().nonnegative(),
     speedBonusMax: z.number().nonnegative(),

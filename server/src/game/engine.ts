@@ -578,6 +578,7 @@ export class GameEngine {
       type: string;
       title: string;
       description?: string;
+      typeLabel?: string;
       timerSeconds: number;
     } | null;
     currentQuestion: {
@@ -617,6 +618,7 @@ export class GameEngine {
             type: round.type,
             title: round.title,
             ...(round.description !== undefined ? { description: round.description } : {}),
+            ...(round.typeLabel !== undefined ? { typeLabel: round.typeLabel } : {}),
             timerSeconds: round.timerSeconds,
           }
         : null,
@@ -664,6 +666,7 @@ export class GameEngine {
       type: string;
       title: string;
       description?: string;
+      typeLabel?: string;
       timerSeconds: number;
     } | null;
     currentQuestion: {

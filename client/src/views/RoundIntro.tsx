@@ -8,7 +8,7 @@ const ROUND_TYPE_LABELS: Record<string, string> = {
   fermi: "Fermi Estimation",
   text: "Text Answer",
   speed_math: "Speed Math",
-  pattern: "Pattern Recognition",
+  pattern: "Multiple Choice",
   image: "Image Round",
 }
 
@@ -18,7 +18,7 @@ export function RoundIntro() {
 
   if (!round) return null
 
-  const typeLabel = ROUND_TYPE_LABELS[round.type] ?? round.type
+  const typeLabel = round.typeLabel ?? ROUND_TYPE_LABELS[round.type] ?? round.type
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">

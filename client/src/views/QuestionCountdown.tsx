@@ -18,7 +18,7 @@ export function QuestionCountdown() {
       <div className="w-full max-w-2xl mx-auto text-center space-y-6">
         {round && (
           <p className="text-sm text-muted-foreground font-medium uppercase tracking-widest">
-            {round.title} — Question {questionIndex + 1}
+            {round.title} · Question {questionIndex + 1}
           </p>
         )}
 

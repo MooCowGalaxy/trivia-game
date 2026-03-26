@@ -34,6 +34,7 @@ export interface RoundInfo {
   type: string
   title: string
   description?: string
+  typeLabel?: string
   timerSeconds: number
 }
 

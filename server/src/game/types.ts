@@ -70,6 +70,7 @@ export interface RoundConfig {
   type: RoundType;
   title: string;
   description?: string;
+  typeLabel?: string;
   timerSeconds: number;
   basePoints: number;
   speedBonusMax: number;

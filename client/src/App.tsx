@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { LeaderboardModal } from "@/components/LeaderboardModal"
 import { GameProgressBar } from "@/components/GameProgressBar"
 import { UserInfoDisplay } from "@/components/UserInfoDisplay"
+import { SpectatorBanner } from "@/components/SpectatorBanner"
 import { Lobby } from "@/views/Lobby"
 import { RoundIntro } from "@/views/RoundIntro"
 import { QuestionCountdown } from "@/views/QuestionCountdown"
@@ -140,7 +141,7 @@ export function App() {
 
   const showLeaderboard = gameState.currentState !== "LOBBY"
   const isPlayer = gameState.players.some((p) => p.id === user.discordId)
-  const isLateSpectator = !isPlayer && gameState.currentState !== "LOBBY"
+  const isSpectator = !isPlayer || !!user.isGuest
 
   return (
     <>
@@ -148,11 +149,7 @@ export function App() {
       <UserInfoDisplay />
       {user.isHost && <HostOverlay />}
       {showLeaderboard && <LeaderboardModal />}
-      {isLateSpectator && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 rounded-lg border border-border bg-card/90 backdrop-blur-sm px-4 py-2 text-sm text-muted-foreground shadow-lg">
-          You joined late — spectating
-        </div>
-      )}
+      {isSpectator && <SpectatorBanner />}
       <View />
     </>
   )
