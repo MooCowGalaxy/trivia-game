@@ -54,6 +54,30 @@ router.get("/dev", (req, res) => {
   res.json({ token, user: payload });
 });
 
+let guestCounter = 0;
+
+/**
+ * GET /auth/guest
+ * Creates a guest JWT for spectating without Discord login.
+ */
+router.get("/guest", (_req, res) => {
+  const jwtSecret = getEnv("JWT_SECRET");
+  guestCounter++;
+  const guestId = `guest_${Date.now()}_${guestCounter}`;
+  const username = `Guest ${guestCounter}`;
+
+  const payload = {
+    discordId: guestId,
+    username,
+    avatarUrl: `https://api.dicebear.com/9.x/initials/png?seed=${encodeURIComponent(username)}`,
+    isHost: false,
+    isGuest: true,
+  };
+
+  const token = jwt.sign(payload, jwtSecret, { expiresIn: "24h" });
+  res.json({ token, user: payload });
+});
+
 /**
  * GET /auth/discord
  * Redirects to Discord OAuth2 authorization page.

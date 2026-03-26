@@ -7,6 +7,7 @@ export interface JwtPayload {
   username: string;
   avatarUrl: string;
   isHost: boolean;
+  isGuest?: boolean;
 }
 
 // Extend Express Request to include user

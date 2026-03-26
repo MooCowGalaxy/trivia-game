@@ -74,6 +74,7 @@ export interface PublicGameState {
   currentQuestion: CurrentQuestion | null
   leaderboard: LeaderboardEntry[]
   timerRemainingMs: number | null
+  progressBar: { completed: number; total: number }
   finaleState: FinaleState | null
 
   // Unified view data
@@ -108,6 +109,11 @@ export interface SpeedMathResult {
   completed: boolean
 }
 
+export interface LeaderboardUpdate {
+  previous: LeaderboardEntry[]
+  current: LeaderboardEntry[]
+}
+
 // ---------- Context ----------
 
 export interface GameContextValue {
@@ -116,6 +122,7 @@ export interface GameContextValue {
   speedMathProgress: Record<string, SpeedMathProgressEntry>
   speedMathResult: SpeedMathResult | null
   timerRemainingMs: number | null
+  leaderboardUpdate: LeaderboardUpdate | null
 }
 
 export const GameContext = createContext<GameContextValue | null>(null)
@@ -132,6 +139,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
   const [speedMathResult, setSpeedMathResult] =
     useState<SpeedMathResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
+  const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
 
   // Connect socket and fetch initial state only when authenticated
   useEffect(() => {
@@ -144,6 +152,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
         // Reset submission count when question changes
         if (prev?.currentQuestion?.id !== state.currentQuestion?.id) {
           setSubmissionCount(null)
+        }
+        // Clear leaderboard update when leaving reveal/results states
+        // (so reconnecting users don't see stale animation data)
+        if (
+          state.currentState !== "QUESTION_REVEAL" &&
+          state.currentState !== "ROUND_RESULTS"
+        ) {
+          setLeaderboardUpdate(null)
         }
         return state
       })
@@ -169,6 +185,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
         }))
       }
     )
+
+    socket.on("game:leaderboard_update", (data: LeaderboardUpdate) => {
+      setLeaderboardUpdate(data)
+    })
 
     socket.on("game:player_joined", (player: Player) => {
       setGameState((prev) => {
@@ -235,6 +255,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("game:timer_sync")
       socket.off("game:submission_count")
       socket.off("game:speed_math_progress")
+      socket.off("game:leaderboard_update")
       socket.off("game:player_joined")
       socket.off("game:player_left")
       socket.off("player:speed_math_result")
@@ -248,6 +269,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     speedMathProgress,
     speedMathResult,
     timerRemainingMs,
+    leaderboardUpdate,
   }
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>

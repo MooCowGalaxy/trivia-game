@@ -1,12 +1,13 @@
 import { useContext } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Leaderboard } from "@/components/Leaderboard"
+import { AnimatedLeaderboard } from "@/components/AnimatedLeaderboard"
 import { GameContext } from "@/context/GameContext"
 
 export function RoundResults() {
   const ctx = useContext(GameContext)
   const gameState = ctx?.gameState
+  const leaderboardUpdate = ctx?.leaderboardUpdate ?? null
 
   if (!gameState) return null
 
@@ -57,7 +58,10 @@ export function RoundResults() {
             <CardTitle>Leaderboard</CardTitle>
           </CardHeader>
           <CardContent>
-            <Leaderboard entries={entries} />
+            <AnimatedLeaderboard
+              entries={entries}
+              leaderboardUpdate={leaderboardUpdate}
+            />
           </CardContent>
         </Card>
       </div>

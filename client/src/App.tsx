@@ -12,6 +12,8 @@ import {
 import { Input } from "@/components/ui/input"
 
 import { LeaderboardModal } from "@/components/LeaderboardModal"
+import { GameProgressBar } from "@/components/GameProgressBar"
+import { UserInfoDisplay } from "@/components/UserInfoDisplay"
 import { Lobby } from "@/views/Lobby"
 import { RoundIntro } from "@/views/RoundIntro"
 import { QuestionCountdown } from "@/views/QuestionCountdown"
@@ -39,7 +41,7 @@ const STATE_VIEWS: Record<GameStateName, React.FC> = {
 }
 
 function LoginPage() {
-  const { login, devLogin, devMode } = useAuth()
+  const { login, devLogin, guestLogin, devMode } = useAuth()
   const [devUsername, setDevUsername] = useState("")
   const [devIsHost, setDevIsHost] = useState(false)
 
@@ -90,6 +92,17 @@ function LoginPage() {
               </p>
             </>
           )}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+          <Button variant="ghost" className="w-full text-muted-foreground" onClick={guestLogin}>
+            Spectate as Guest
+          </Button>
         </CardContent>
       </Card>
     </div>
@@ -131,6 +144,8 @@ export function App() {
 
   return (
     <>
+      <GameProgressBar />
+      <UserInfoDisplay />
       {user.isHost && <HostOverlay />}
       {showLeaderboard && <LeaderboardModal />}
       {isLateSpectator && (

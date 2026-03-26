@@ -2,13 +2,14 @@ import { useContext } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ImageQuestion } from "@/components/ImageQuestion"
-import { Leaderboard } from "@/components/Leaderboard"
+import { AnimatedLeaderboard } from "@/components/AnimatedLeaderboard"
 import { GameContext } from "@/context/GameContext"
 import { Check, X } from "lucide-react"
 
 export function QuestionReveal() {
   const ctx = useContext(GameContext)
   const gameState = ctx?.gameState
+  const leaderboardUpdate = ctx?.leaderboardUpdate ?? null
 
   if (!gameState) return null
 
@@ -60,7 +61,7 @@ export function QuestionReveal() {
               {bd && earned > 0 && (
                 <div className="text-sm font-medium text-muted-foreground">
                   {isFermi ? (
-                    <span>+{earned} pts <span className="text-xs">(rank bonus)</span></span>
+                    <span>+{earned} pts <span className="text-xs">(proximity bonus)</span></span>
                   ) : bd.speedBonus > 0 ? (
                     <span>+{bd.base} base, +{bd.speedBonus} speed bonus = <span className="text-foreground font-semibold">+{earned} pts</span></span>
                   ) : (
@@ -117,7 +118,10 @@ export function QuestionReveal() {
             <CardTitle>Leaderboard</CardTitle>
           </CardHeader>
           <CardContent>
-            <Leaderboard entries={entries} />
+            <AnimatedLeaderboard
+              entries={entries}
+              leaderboardUpdate={leaderboardUpdate}
+            />
           </CardContent>
         </Card>
       </div>

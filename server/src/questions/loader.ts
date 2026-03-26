@@ -20,6 +20,12 @@ const QuestionConfigSchema = z.object({
   aliases: z.array(z.string()).optional(),
 });
 
+const CategorySourceSchema = z.object({
+  categories: z.array(z.string().min(1, 'Category name cannot be empty')).min(1, 'Must specify at least one category'),
+  questionCount: z.number().int().positive(),
+  requireExactChoices: z.number().int().positive().optional(),
+});
+
 const SpeedMathGeneratorParamsSchema = z.object({
   questionCount: z.number().int().positive(),
   operations: z.array(z.string()),
@@ -40,6 +46,7 @@ const RoundConfigSchema = z
     speedBonusMax: z.number().nonnegative(),
     questions: z.array(QuestionConfigSchema).optional(),
     generatorParams: SpeedMathGeneratorParamsSchema.optional(),
+    categorySource: CategorySourceSchema.optional(),
   })
   .superRefine((round, ctx) => {
     if (round.type === 'speed_math') {
@@ -51,22 +58,34 @@ const RoundConfigSchema = z
         });
       }
     } else {
-      if (!round.questions || round.questions.length === 0) {
+      // Non-speed_math rounds need either questions or categorySource
+      if ((!round.questions || round.questions.length === 0) && !round.categorySource) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Round ${round.roundNumber} (${round.type}) requires a non-empty questions array`,
+          message: `Round ${round.roundNumber} (${round.type}) requires a non-empty questions array or a categorySource`,
           path: ['questions'],
         });
       }
     }
   });
 
-const FinaleConfigSchema = z.object({
-  title: z.string(),
-  timerSeconds: z.number().positive(),
-  winCondition: z.number(),
-  questions: z.array(QuestionConfigSchema).min(1, 'Finale must have at least one question'),
-});
+const FinaleConfigSchema = z
+  .object({
+    title: z.string(),
+    timerSeconds: z.number().positive(),
+    winCondition: z.number(),
+    questions: z.array(QuestionConfigSchema).optional(),
+    categorySource: CategorySourceSchema.optional(),
+  })
+  .superRefine((finale, ctx) => {
+    if ((!finale.questions || finale.questions.length === 0) && !finale.categorySource) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Finale requires a non-empty questions array or a categorySource',
+        path: ['questions'],
+      });
+    }
+  });
 
 const GameSettingsSchema = z.object({
   hostDiscordId: z.string(),

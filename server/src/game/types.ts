@@ -59,6 +59,12 @@ export interface QuestionConfig {
   aliases?: string[];
 }
 
+export interface CategorySource {
+  categories: string[];
+  questionCount: number;
+  requireExactChoices?: number;
+}
+
 export interface RoundConfig {
   roundNumber: number;
   type: RoundType;
@@ -69,13 +75,15 @@ export interface RoundConfig {
   speedBonusMax: number;
   questions?: QuestionConfig[];
   generatorParams?: SpeedMathGeneratorParams;
+  categorySource?: CategorySource;
 }
 
 export interface FinaleConfig {
   title: string;
   timerSeconds: number;
   winCondition: number;  // first to N correct
-  questions: QuestionConfig[];
+  questions?: QuestionConfig[];
+  categorySource?: CategorySource;
 }
 
 export interface GameSettings {

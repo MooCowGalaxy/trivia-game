@@ -11,6 +11,7 @@ export interface AuthUser {
   username: string
   avatarUrl: string
   isHost: boolean
+  isGuest?: boolean
 }
 
 export interface AuthContextValue {
@@ -19,6 +20,7 @@ export interface AuthContextValue {
   devMode: boolean
   login: () => void
   devLogin: (username: string, host?: boolean) => void
+  guestLogin: () => void
   logout: () => void
 }
 
@@ -98,13 +100,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const guestLogin = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/guest`, {
+        credentials: "include",
+      })
+      if (!res.ok) {
+        console.error("Guest login failed")
+        return
+      }
+      const data = await res.json() as { token: string; user: AuthUser }
+      sessionStorage.setItem("devToken", data.token)
+      setUser(data.user)
+    } catch (err) {
+      console.error("Guest login error:", err)
+    }
+  }, [])
+
   const logout = useCallback(() => {
     sessionStorage.removeItem("devToken")
     window.location.href = `${API_BASE}/auth/logout`
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, devMode, login, devLogin, logout }}>
+    <AuthContext.Provider value={{ user, loading, devMode, login, devLogin, guestLogin, logout }}>
       {children}
     </AuthContext.Provider>
   )

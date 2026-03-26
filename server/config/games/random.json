@@ -1,0 +1,24 @@
+{
+  "gameId": "random-trivia",
+  "settings": {
+    "hostDiscordId": "594239049884237836",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 1,
+      "type": "pattern",
+      "title": "General Trivia",
+      "description": "just pick the right answer (multiple choice)",
+      "timerSeconds": 12,
+      "basePoints": 200,
+      "speedBonusMax": 200,
+      "categorySource": {
+        "categories": ["science-technology", "hobbies", "general", "video-games"],
+        "questionCount": 15,
+        "requireExactChoices": 4
+      }
+    }
+  ]
+}

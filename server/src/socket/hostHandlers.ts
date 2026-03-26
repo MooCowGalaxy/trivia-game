@@ -2,7 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { GameEngine } from '../game/engine.js';
 import type { GameTimer } from '../game/timer.js';
 import { GameState } from '../game/types.js';
-import type { TransitionAction } from '../game/types.js';
+import type { TransitionAction, LeaderboardEntry } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
 
 export function registerHostHandlers(
@@ -28,6 +28,10 @@ export function registerHostHandlers(
     }
   }
 
+  function emitLeaderboardUpdate(previous: LeaderboardEntry[], current: LeaderboardEntry[]): void {
+    io.emit('game:leaderboard_update', { previous, current });
+  }
+
   function startTimerForState(): void {
     const state = engine.getGameState();
     let durationMs: number;
@@ -48,7 +52,20 @@ export function registerHostHandlers(
         io.emit('game:timer_sync', { remainingMs });
       },
       () => {
+        // Snapshot leaderboard before scoring so we can animate changes
+        const prevState = engine.getGameState();
+        const willScore =
+          prevState === GameState.QUESTION_ACTIVE ||
+          prevState === GameState.SPEED_MATH_ACTIVE;
+        const previousLeaderboard = willScore ? engine.getLeaderboard() : null;
+
         engine.endTimer();
+
+        // Emit leaderboard update if scoring just happened
+        if (previousLeaderboard) {
+          emitLeaderboardUpdate(previousLeaderboard, engine.getLeaderboard());
+        }
+
         // If countdown just ended, start a new timer for the question
         const newState = engine.getGameState();
         if (

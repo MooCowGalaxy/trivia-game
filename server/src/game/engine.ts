@@ -187,7 +187,7 @@ export class GameEngine {
         const finale = this.state.config.finale;
         if (!finale) throw new Error('No finale configured');
         if (
-          this.state.finaleState.currentQuestionIndex < finale.questions.length - 1 &&
+          this.state.finaleState.currentQuestionIndex < (finale.questions ?? []).length - 1 &&
           this.state.finaleState.winnerId === null
         ) {
           this.state.finaleState.currentQuestionIndex++;
@@ -379,6 +379,8 @@ export class GameEngine {
         typeof question.correctAnswer === 'number'
           ? question.correctAnswer
           : Number(question.correctAnswer),
+        round.basePoints,
+        round.speedBonusMax,
       );
     } else {
       questionScores = scoreStandardRound(
@@ -468,8 +470,58 @@ export class GameEngine {
 
   getCurrentFinaleQuestion(): QuestionConfig | null {
     if (!this.state.config.finale) return null;
-    const questions = this.state.config.finale.questions;
+    const questions = this.state.config.finale.questions ?? [];
     return questions[this.state.finaleState.currentQuestionIndex] ?? null;
+  }
+
+  /**
+   * Compute the progress bar state: how many theoretical max points have been
+   * "played through" vs the total possible across the whole game.
+   * The value reflects the start of the current question (doesn't advance
+   * until the next question/round begins).
+   */
+  getProgressBar(): { completed: number; total: number } {
+    const rounds = this.state.config.rounds;
+    let total = 0;
+    let completed = 0;
+
+    for (let i = 0; i < rounds.length; i++) {
+      const round = rounds[i]!;
+      const roundMax = this.getRoundTheoreticalMax(round);
+      total += roundMax;
+
+      if (i < this.state.currentRoundIndex) {
+        // Fully completed round
+        completed += roundMax;
+      } else if (i === this.state.currentRoundIndex) {
+        const st = this.state.currentState;
+        if (
+          st === GameState.ROUND_RESULTS ||
+          st === GameState.FINALE_INTRO ||
+          st === GameState.FINALE_QUESTION ||
+          st === GameState.FINALE_REVEAL ||
+          st === GameState.GAME_OVER
+        ) {
+          // Current round is fully complete
+          completed += roundMax;
+        } else if (round.type !== 'speed_math') {
+          // Standard round: count questions before the current one
+          const questionMax = round.basePoints + round.speedBonusMax;
+          completed += this.state.currentQuestionIndex * questionMax;
+        }
+        // Speed math in progress: 0 additional (it's atomic)
+      }
+    }
+
+    return { completed, total };
+  }
+
+  private getRoundTheoreticalMax(round: RoundConfig): number {
+    if (round.type === 'speed_math') {
+      return round.basePoints + round.speedBonusMax;
+    }
+    const questionCount = round.questions?.length ?? 0;
+    return questionCount * (round.basePoints + round.speedBonusMax);
   }
 
   getLeaderboard(): LeaderboardEntry[] {
@@ -536,6 +588,7 @@ export class GameEngine {
     } | null;
     leaderboard: LeaderboardEntry[];
     timerRemainingMs: number | null;
+    progressBar: { completed: number; total: number };
     finaleState: {
       currentQuestionIndex: number;
       wins: Record<string, number>;
@@ -570,6 +623,7 @@ export class GameEngine {
       currentQuestion: question,
       leaderboard: this.getLeaderboard(),
       timerRemainingMs: this.getTimerRemainingMs(),
+      progressBar: this.getProgressBar(),
       finaleState:
         this.state.currentState === GameState.FINALE_INTRO ||
         this.state.currentState === GameState.FINALE_QUESTION ||
@@ -620,6 +674,7 @@ export class GameEngine {
     } | null;
     leaderboard: LeaderboardEntry[];
     timerRemainingMs: number | null;
+    progressBar: { completed: number; total: number };
     finaleState: {
       currentQuestionIndex: number;
       wins: Record<string, number>;

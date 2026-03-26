@@ -9,6 +9,7 @@ import authRouter from './auth/discord.js';
 import { authenticateSocket } from './middleware/authMiddleware.js';
 import type { JwtPayload } from './middleware/authMiddleware.js';
 import { loadGameConfig } from './questions/loader.js';
+import { loadCategoryQuestions } from './questions/categoryParser.js';
 import { generateSpeedMathQuestions } from './questions/generator.js';
 import { renderMathExpression } from './questions/renderer.js';
 import { GameEngine } from './game/engine.js';
@@ -24,6 +25,35 @@ const configFile = process.env.GAME_CONFIG ?? 'default.json';
 const configPath = path.resolve(__dirname, '..', 'config', 'games', configFile);
 console.log(`Loading game config from: ${configPath}`);
 const gameConfig = loadGameConfig(configPath);
+
+// ── Resolve category-sourced questions ────────────────────────────────────────
+
+for (let i = 0; i < gameConfig.rounds.length; i++) {
+  const round = gameConfig.rounds[i]!;
+  if (round.categorySource) {
+    console.log(
+      `Loading category questions for round ${round.roundNumber} from [${round.categorySource.categories.join(', ')}]...`,
+    );
+    const questions = loadCategoryQuestions({
+      ...round.categorySource,
+      idPrefix: `r${round.roundNumber}`,
+    });
+    round.questions = questions;
+    console.log(`  Loaded ${questions.length} questions for round ${round.roundNumber}`);
+  }
+}
+
+if (gameConfig.finale?.categorySource) {
+  console.log(
+    `Loading category questions for finale from [${gameConfig.finale.categorySource.categories.join(', ')}]...`,
+  );
+  const questions = loadCategoryQuestions({
+    ...gameConfig.finale.categorySource,
+    idPrefix: 'fin',
+  });
+  gameConfig.finale.questions = questions;
+  console.log(`  Loaded ${questions.length} questions for finale`);
+}
 
 // ── Generate speed math questions and render as images ────────────────────────
 
@@ -155,6 +185,18 @@ io.on('connection', (socket) => {
   const existingPlayer = engine.getPlayers().get(user.discordId);
   const currentState = engine.getGameState();
 
+  // Guests are always spectators — skip player management
+  if (user.isGuest) {
+    console.log(`  Guest spectator connected: ${user.username}`);
+    socket.emit('game:state_change', engine.getPublicStateForPlayer(null, getQuestionImageData));
+    registerPlayerHandlers(socket, io, engine, getQuestionImageData);
+
+    socket.on('disconnect', () => {
+      console.log(`  Guest spectator disconnected: ${user.username}`);
+    });
+    return;
+  }
+
   if (existingPlayer) {
     // Reconnection — update socket mapping
     const reconnected = engine.reconnectPlayer(user.discordId, socket.id);
@@ -225,5 +267,5 @@ httpServer.listen(PORT, () => {
   console.log(`challenge server running on port ${PORT}`);
   console.log(`  Game ID: ${gameConfig.gameId}`);
   console.log(`  Rounds: ${gameConfig.rounds.length}`);
-  console.log(`  Finale questions: ${gameConfig.finale?.questions.length ?? 0}`);
+  console.log(`  Finale questions: ${gameConfig.finale?.questions?.length ?? 0}`);
 });

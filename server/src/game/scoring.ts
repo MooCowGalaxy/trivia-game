@@ -87,58 +87,49 @@ export function scoreSpeedMathRound(
 
 // ─── Fermi Estimation Scoring ────────────────────────────────────────────────
 //
-// Proximity = |log10(playerAnswer) - log10(correctAnswer)|
-// Rank by proximity (lower is better):
-//   1st  → 250
-//   2nd  → 150
-//   3rd  → 75
-//   rest → 25
+// Linear proximity: |playerAnswer - correctAnswer|
+// Rank by distance (lower is better). Points are linearly scaled:
+//   closest  → basePoints + speedBonusMax
+//   farthest → 0
 // Invalid / non-positive answers receive 0.
-
-const FERMI_POINTS = [250, 150, 75] as const;
-const FERMI_DEFAULT = 25;
 
 export function scoreFermiQuestion(
   submissions: PlayerSubmission[],
   correctAnswer: number,
+  basePoints: number,
+  speedBonusMax: number,
 ): Map<string, number> {
   const scores = new Map<string, number>();
-
-  if (correctAnswer <= 0) {
-    // Should not happen in practice; give everyone 0
-    for (const sub of submissions) {
-      scores.set(sub.playerId, 0);
-    }
-    return scores;
-  }
-
-  const logCorrect = Math.log10(correctAnswer);
+  const maxPoints = basePoints + speedBonusMax;
 
   interface Ranked {
     playerId: string;
-    proximity: number;
+    distance: number;
   }
 
   const ranked: Ranked[] = [];
 
   for (const sub of submissions) {
     const numAnswer = typeof sub.answer === 'number' ? sub.answer : Number(sub.answer);
-    if (Number.isNaN(numAnswer) || numAnswer <= 0) {
+    if (Number.isNaN(numAnswer)) {
       scores.set(sub.playerId, 0);
       continue;
     }
     ranked.push({
       playerId: sub.playerId,
-      proximity: Math.abs(Math.log10(numAnswer) - logCorrect),
+      distance: Math.abs(numAnswer - correctAnswer),
     });
   }
 
-  // Sort by proximity ascending (closest first)
-  ranked.sort((a, b) => a.proximity - b.proximity);
+  // Sort by distance ascending (closest first)
+  ranked.sort((a, b) => a.distance - b.distance);
 
-  for (let i = 0; i < ranked.length; i++) {
+  const n = ranked.length;
+  for (let i = 0; i < n; i++) {
     const entry = ranked[i]!;
-    const points = i < FERMI_POINTS.length ? FERMI_POINTS[i]! : FERMI_DEFAULT;
+    const points = n === 1
+      ? maxPoints
+      : Math.floor(maxPoints * (1 - i / (n - 1)));
     scores.set(entry.playerId, points);
   }
 
