@@ -56,6 +56,7 @@ export interface LeaderboardEntry {
   playerId: string
   username: string
   score: number
+  totalResponseTimeMs: number
 }
 
 export interface SpeedMathState {

@@ -64,16 +64,13 @@ export class GameEngine {
       timerDurationMs: null,
       roundScores: new Map(),
       generatedQuestions: generatedQuestions ?? new Map(),
+      totalResponseTimeMs: new Map(),
     };
   }
 
   // ── Player Management ──────────────────────────────────────────────────
 
   addPlayer(id: string, username: string, avatarUrl: string): Player {
-    if (this.state.currentState !== GameState.LOBBY) {
-      throw new Error('Players can only join during LOBBY');
-    }
-
     const existing = this.state.players.get(id);
     if (existing) {
       // Player already exists — reconnect them
@@ -93,7 +90,33 @@ export class GameEngine {
     };
     this.state.players.set(id, player);
     this.state.scores.set(id, 0);
+
+    // If joining during an active speed math round, init their state
+    if (this.state.currentState === GameState.SPEED_MATH_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.speedMathStates.set(id, {
+        currentQuestionIndex: 0,
+        correctCount: 0,
+        completedAt: null,
+        attempts: new Map(),
+      });
+    }
+
     return player;
+  }
+
+  /**
+   * Fully removes a player from the game (lobby toggle to spectate).
+   * Only allowed during LOBBY.
+   */
+  dropPlayer(id: string): boolean {
+    if (this.state.currentState !== GameState.LOBBY) {
+      return false;
+    }
+    this.state.players.delete(id);
+    this.state.scores.delete(id);
+    this.state.totalResponseTimeMs.delete(id);
+    return true;
   }
 
   removePlayer(id: string): void {
@@ -330,6 +353,8 @@ export class GameEngine {
   // ── Timer Expiry ───────────────────────────────────────────────────────
 
   endTimer(): void {
+    const timerStartedAt = this.state.timerStartedAt;
+    const timerDurationMs = this.state.timerDurationMs;
     this.state.timerStartedAt = null;
     this.state.timerDurationMs = null;
 
@@ -341,12 +366,12 @@ export class GameEngine {
         break;
 
       case GameState.QUESTION_ACTIVE:
-        this.scoreCurrentQuestion();
+        this.scoreCurrentQuestion(timerStartedAt);
         this.setState(GameState.QUESTION_REVEAL);
         break;
 
       case GameState.SPEED_MATH_ACTIVE:
-        this.scoreSpeedMathRound();
+        this.scoreSpeedMathRound(timerStartedAt, timerDurationMs);
         this.setState(GameState.ROUND_RESULTS);
         break;
 
@@ -363,7 +388,7 @@ export class GameEngine {
 
   // ── Scoring Helpers ────────────────────────────────────────────────────
 
-  private scoreCurrentQuestion(): void {
+  private scoreCurrentQuestion(timerStartedAt: number | null): void {
     const round = this.getCurrentRoundConfig();
     const question = this.getCurrentQuestion();
     if (!question) return;
@@ -392,9 +417,18 @@ export class GameEngine {
     }
 
     this.applyScores(questionScores, question.id);
+
+    // Track response times for tiebreaker
+    if (timerStartedAt !== null) {
+      for (const sub of submissions) {
+        const responseTime = sub.timestamp - timerStartedAt;
+        const current = this.state.totalResponseTimeMs.get(sub.playerId) ?? 0;
+        this.state.totalResponseTimeMs.set(sub.playerId, current + responseTime);
+      }
+    }
   }
 
-  private scoreSpeedMathRound(): void {
+  private scoreSpeedMathRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
     const round = this.getCurrentRoundConfig();
     const roundState = this.getCurrentRoundState();
     const generatedQs = this.state.generatedQuestions.get(this.state.currentRoundIndex);
@@ -410,6 +444,17 @@ export class GameEngine {
 
     // Apply using a synthetic questionId
     this.applyScores(questionScores, `speed_math_round_${this.state.currentRoundIndex}`);
+
+    // Track response times for tiebreaker
+    if (timerStartedAt !== null) {
+      for (const [playerId, playerState] of roundState.speedMathStates) {
+        const responseTime = playerState.completedAt !== null
+          ? playerState.completedAt - timerStartedAt
+          : (timerDurationMs ?? 0);
+        const current = this.state.totalResponseTimeMs.get(playerId) ?? 0;
+        this.state.totalResponseTimeMs.set(playerId, current + responseTime);
+      }
+    }
   }
 
   private scoreFinaleQuestion(): void {
@@ -529,10 +574,15 @@ export class GameEngine {
     for (const [playerId, score] of this.state.scores) {
       const player = this.state.players.get(playerId);
       if (player) {
-        entries.push({ playerId, username: player.username, score });
+        const totalResponseTimeMs = this.state.totalResponseTimeMs.get(playerId) ?? 0;
+        entries.push({ playerId, username: player.username, score, totalResponseTimeMs });
       }
     }
-    entries.sort((a, b) => b.score - a.score);
+    // Sort by score descending, then by total response time ascending (faster = better)
+    entries.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.totalResponseTimeMs - b.totalResponseTimeMs;
+    });
     return entries;
   }
 

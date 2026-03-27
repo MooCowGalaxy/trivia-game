@@ -36,11 +36,9 @@ export function Leaderboard({
 }: LeaderboardProps) {
   const authCtx = useContext(AuthContext)
   const currentUserId = authCtx?.user?.discordId
-  const sorted = [...entries].sort((a, b) => b.score - a.score)
-
   return (
     <div className={cn("space-y-1", className)}>
-      {sorted.map((entry, index) => {
+      {entries.map((entry, index) => {
         const rank = index + 1
         const isHighlighted = rank <= highlightTop
         const isDisconnected = entry.connected === false

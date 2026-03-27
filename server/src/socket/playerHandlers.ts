@@ -80,6 +80,67 @@ export function registerPlayerHandlers(
     }
   });
 
+  // ── Join / Spectate toggle ───────────────────────────────────────────────
+
+  socket.on('player:join_game', (_data, callback) => {
+    try {
+      if (user.isGuest) {
+        if (typeof callback === 'function') callback({ ok: false, reason: 'Guests cannot join as players' });
+        return;
+      }
+
+      const player = engine.addPlayer(user.discordId, user.username, user.avatarUrl);
+      player.socketId = socket.id;
+
+      // Broadcast to everyone that a new player joined
+      io.emit('game:player_joined', {
+        id: player.id,
+        username: player.username,
+        avatarUrl: player.avatarUrl,
+        score: player.score,
+        connected: player.connected,
+      });
+
+      // Broadcast per-player state to all sockets
+      for (const [, s] of io.sockets.sockets) {
+        const u = s.data.user as JwtPayload | undefined;
+        const pid = u?.discordId ?? null;
+        s.emit('game:state_change', engine.getPublicStateForPlayer(pid, getQuestionImageData));
+      }
+
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:join_game error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('player:spectate', (_data, callback) => {
+    try {
+      const dropped = engine.dropPlayer(user.discordId);
+      if (!dropped) {
+        if (typeof callback === 'function') callback({ ok: false, reason: 'Can only switch to spectator during lobby' });
+        return;
+      }
+
+      io.emit('game:player_left', { id: user.discordId });
+
+      // Broadcast per-player state to all sockets
+      for (const [, s] of io.sockets.sockets) {
+        const u = s.data.user as JwtPayload | undefined;
+        const pid = u?.discordId ?? null;
+        s.emit('game:state_change', engine.getPublicStateForPlayer(pid, getQuestionImageData));
+      }
+
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:spectate error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
   // ── Disconnect ────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {

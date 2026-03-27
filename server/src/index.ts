@@ -245,9 +245,8 @@ io.on('connection', (socket) => {
       console.error(`  Failed to add player ${user.username}:`, err);
     }
   } else {
-    // Spectator: game has left lobby, new user cannot join as player
+    // Game has left lobby — connect as spectator (they can join via player:join_game)
     console.log(`  Spectator connected: ${user.username} (game in ${currentState})`);
-    // Send initial state to spectator (no player ID)
     socket.emit('game:state_change', engine.getPublicStateForPlayer(null, getQuestionImageData));
   }
 

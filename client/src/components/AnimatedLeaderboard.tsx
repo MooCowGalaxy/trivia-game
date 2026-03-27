@@ -183,8 +183,6 @@ export function AnimatedLeaderboard({
   highlightTop = 3,
   className,
 }: AnimatedLeaderboardProps) {
-  const sorted = [...entries].sort((a, b) => b.score - a.score)
-
   // Build lookup maps from the update data
   const shouldAnimate = leaderboardUpdate !== null
   const previousRankMap = new Map<string, number>()
@@ -199,7 +197,7 @@ export function AnimatedLeaderboard({
 
   return (
     <div className={cn("space-y-1", className)}>
-      {sorted.map((entry, index) => {
+      {entries.map((entry, index) => {
         const newRank = index + 1
         const oldRank = previousRankMap.get(entry.id) ?? newRank
         const oldScore = previousScoreMap.get(entry.id) ?? entry.score

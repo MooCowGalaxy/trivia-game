@@ -165,6 +165,8 @@ export interface GameEngineState {
   roundScores: Map<number, Map<string, Map<string, number>>>;
   /** Pre-generated questions keyed by round index */
   generatedQuestions: Map<number, GeneratedQuestion[]>;
+  /** playerId → cumulative response time in ms (for tiebreaker) */
+  totalResponseTimeMs: Map<string, number>;
 }
 
 // ─── Transition Actions ──────────────────────────────────────────────────────
@@ -184,4 +186,5 @@ export interface LeaderboardEntry {
   playerId: string;
   username: string;
   score: number;
+  totalResponseTimeMs: number;
 }

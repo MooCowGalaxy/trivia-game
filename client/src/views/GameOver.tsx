@@ -11,9 +11,7 @@ export function GameOver() {
 
   if (!gameState) return null
 
-  const sorted = [...gameState.leaderboard].sort((a, b) => b.score - a.score)
-
-  const toEntry = (e: typeof sorted[number]) => {
+  const toEntry = (e: typeof gameState.leaderboard[number]) => {
     const player = gameState.players.find((p) => p.id === e.playerId)
     return {
       id: e.playerId,
@@ -24,7 +22,7 @@ export function GameOver() {
     }
   }
 
-  const allEntries = sorted.map(toEntry)
+  const allEntries = gameState.leaderboard.map(toEntry)
   const topThree = allEntries.slice(0, 3)
   const winner = topThree[0]
 

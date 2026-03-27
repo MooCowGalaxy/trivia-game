@@ -1,0 +1,5 @@
+- allow players to join mid-game
+  - similarly, in the lobby, allow players to switch between spectating and participating
+- allow players to edit answer (actually skip for now)
+- account for point ties
+  - tie breaker based on total time to answer all questions
