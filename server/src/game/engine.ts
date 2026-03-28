@@ -313,6 +313,11 @@ export class GameEngine {
       throw new Error('Player already completed all questions');
     }
 
+    // Validate that the submitted question index matches the player's current position
+    if (questionIndex !== playerState.currentQuestionIndex) {
+      throw new Error(`Expected question index ${playerState.currentQuestionIndex}, got ${questionIndex}`);
+    }
+
     // Record attempt
     const attempts = playerState.attempts.get(questionIndex) ?? 0;
     playerState.attempts.set(questionIndex, attempts + 1);
@@ -328,7 +333,7 @@ export class GameEngine {
       throw new Error(`Invalid question index: ${questionIndex}`);
     }
 
-    const correct = answer === question.correctAnswer;
+    const correct = Number(answer) === question.correctAnswer;
 
     if (correct) {
       playerState.correctCount++;
@@ -613,6 +618,7 @@ export class GameEngine {
    */
   getPublicState(): {
     gameId: string;
+    hostDiscordId: string;
     currentState: GameState;
     players: Array<{
       id: string;
@@ -652,6 +658,7 @@ export class GameEngine {
 
     return {
       gameId: this.state.gameId,
+      hostDiscordId: this.state.config.settings.hostDiscordId,
       currentState: this.state.currentState,
       players: Array.from(this.state.players.values()).map((p) => ({
         id: p.id,
@@ -701,6 +708,7 @@ export class GameEngine {
     getImageData: (questionId: string) => string | null,
   ): {
     gameId: string;
+    hostDiscordId: string;
     currentState: GameState;
     players: Array<{
       id: string;

@@ -19,7 +19,7 @@ export function Lobby() {
   const connectedPlayers = gameState.players.filter((p) => p.connected)
   const isPlayer = user ? gameState.players.some((p) => p.id === user.discordId) : false
   const isGuest = !!user?.isGuest
-  const isHost = !!user?.isHost
+  const isHost = !!user && gameState.hostDiscordId === user.discordId
 
   const handleSpectate = () => {
     socket.emit("player:spectate")

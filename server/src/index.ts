@@ -3,9 +3,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import authRouter from './auth/discord.js';
+import { createAuthRouter } from './auth/discord.js';
 import { authenticateSocket } from './middleware/authMiddleware.js';
 import type { JwtPayload } from './middleware/authMiddleware.js';
 import { loadGameConfig } from './questions/loader.js';
@@ -134,12 +135,25 @@ function getQuestionImageData(questionId: string): string | null {
 
 // ── Express app ───────────────────────────────────────────────────────────────
 
+const allowedOrigin = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+
 const app = express();
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json());
 
+// Rate limit auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Mount auth routes
-app.use('/auth', authRouter);
+const authRouter = createAuthRouter((devHostId) => {
+  gameConfig.settings.hostDiscordId = devHostId;
+});
+app.use('/auth', authLimiter, authRouter);
 
 // Serve client build (static assets)
 const clientDistDir = path.resolve(__dirname, '..', '..', 'client', 'dist');
@@ -162,7 +176,7 @@ app.get('{*path}', (_req, res) => {
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: true,
+    origin: allowedOrigin,
     credentials: true,
   },
 });
@@ -174,13 +188,8 @@ io.use(authenticateSocket);
 
 io.on('connection', (socket) => {
   const user = socket.data.user as JwtPayload;
-  console.log(`Socket connected: ${user.username} (${user.discordId}) [host=${user.isHost}]`);
-
-  // In dev mode, if this user's JWT says they're the host, update the game config
-  // so the engine recognizes their generated discordId as the host
-  if (process.env.DEV_MODE === 'true' && user.isHost) {
-    gameConfig.settings.hostDiscordId = user.discordId;
-  }
+  const isHost = user.discordId === gameConfig.settings.hostDiscordId;
+  console.log(`Socket connected: ${user.username} (${user.discordId}) [host=${isHost}]`);
 
   const existingPlayer = engine.getPlayers().get(user.discordId);
   const currentState = engine.getGameState();
@@ -251,7 +260,7 @@ io.on('connection', (socket) => {
   }
 
   // Register host handlers if this is the host
-  if (user.isHost) {
+  if (isHost) {
     registerHostHandlers(socket, io, engine, timer, getQuestionImageData);
   }
 

@@ -68,6 +68,7 @@ export interface SpeedMathState {
 
 export interface PublicGameState {
   gameId: string
+  hostDiscordId: string
   currentState: GameStateName
   players: Player[]
   currentRoundIndex: number

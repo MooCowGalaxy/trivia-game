@@ -15,7 +15,7 @@ export function registerHostHandlers(
   const user = socket.data.user as JwtPayload;
 
   function assertHost(): void {
-    if (!user.isHost) {
+    if (user.discordId !== engine.getFullState().config.settings.hostDiscordId) {
       throw new Error('Only the host can perform this action');
     }
   }

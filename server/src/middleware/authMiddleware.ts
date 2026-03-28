@@ -6,7 +6,6 @@ export interface JwtPayload {
   discordId: string;
   username: string;
   avatarUrl: string;
-  isHost: boolean;
   isGuest?: boolean;
 }
 

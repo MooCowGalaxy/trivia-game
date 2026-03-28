@@ -147,7 +147,7 @@ export function App() {
     <>
       <GameProgressBar />
       <UserInfoDisplay />
-      {user.isHost && <HostOverlay />}
+      {gameState.hostDiscordId === user.discordId && <HostOverlay />}
       {showLeaderboard && <LeaderboardModal />}
       {isSpectator && <SpectatorBanner />}
       <View />

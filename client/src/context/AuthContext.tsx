@@ -10,7 +10,6 @@ export interface AuthUser {
   discordId: string
   username: string
   avatarUrl: string
-  isHost: boolean
   isGuest?: boolean
 }
 
