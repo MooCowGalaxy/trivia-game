@@ -125,7 +125,7 @@ function getQuestionImageData(questionId: string): string | null {
   ];
 
   for (const question of allQuestions) {
-    if (question.id === questionId && question.display.type === 'image' && question.display.src) {
+    if (question.id === questionId && question.display?.type === 'image' && question.display.src) {
       return readImageAsDataUrl(resolveImagePath(question.display.src));
     }
   }

@@ -40,7 +40,7 @@ export interface RoundInfo {
 
 export interface CurrentQuestion {
   id: string
-  display: { type: string; src?: string }
+  display?: { type: string; src?: string }
   answerType: string
   options?: string[]
 }

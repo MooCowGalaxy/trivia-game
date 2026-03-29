@@ -50,7 +50,7 @@ export interface QuestionDisplay {
 export interface QuestionConfig {
   id: string;
   text?: string;            // Optional question text displayed alongside the image
-  display: QuestionDisplay;
+  display?: QuestionDisplay;
   answerType: AnswerType;
   options?: string[];
   correctAnswer: string | number;

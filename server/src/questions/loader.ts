@@ -11,7 +11,7 @@ const QuestionDisplaySchema = z.object({
 const QuestionConfigSchema = z.object({
   id: z.string(),
   text: z.string().optional(),
-  display: QuestionDisplaySchema,
+  display: QuestionDisplaySchema.optional(),
   answerType: z.enum(['exact_number', 'multiple_choice', 'fermi', 'text']),
   options: z.array(z.string()).optional(),
   correctAnswer: z.union([z.string(), z.number()]),

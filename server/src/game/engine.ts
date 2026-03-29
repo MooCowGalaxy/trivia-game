@@ -639,7 +639,7 @@ export class GameEngine {
     } | null;
     currentQuestion: {
       id: string;
-      display: { type: string; src?: string };
+      display?: { type: string; src?: string };
       answerType: string;
       options?: string[];
     } | null;
@@ -729,7 +729,7 @@ export class GameEngine {
     } | null;
     currentQuestion: {
       id: string;
-      display: { type: string; src?: string };
+      display?: { type: string; src?: string };
       answerType: string;
       options?: string[];
     } | null;
@@ -1012,7 +1012,7 @@ export class GameEngine {
 
   private safeGetCurrentPublicQuestion(): {
     id: string;
-    display: { type: string; src?: string };
+    display?: { type: string; src?: string };
     answerType: string;
     options?: string[];
   } | null {
@@ -1034,17 +1034,19 @@ export class GameEngine {
 
     const pub: {
       id: string;
-      display: { type: string; src?: string };
+      display?: { type: string; src?: string };
       answerType: string;
       options?: string[];
     } = {
       id: question.id,
-      display: { type: question.display.type },
       answerType: question.answerType,
     };
 
-    if (question.display.src) {
-      pub.display.src = question.display.src;
+    if (question.display) {
+      pub.display = { type: question.display.type };
+      if (question.display.src) {
+        pub.display.src = question.display.src;
+      }
     }
     if (question.options) {
       pub.options = question.options;
