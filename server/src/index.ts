@@ -138,6 +138,7 @@ function getQuestionImageData(questionId: string): string | null {
 const allowedOrigin = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json());
 
