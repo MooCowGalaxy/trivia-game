@@ -75,7 +75,6 @@ export interface PublicGameState {
   currentQuestionIndex: number
   currentRound: RoundInfo | null
   currentQuestion: CurrentQuestion | null
-  leaderboard: LeaderboardEntry[]
   timerRemainingMs: number | null
   progressBar: { completed: number; total: number }
   finaleState: FinaleState | null
@@ -125,6 +124,7 @@ export interface GameContextValue {
   speedMathProgress: Record<string, SpeedMathProgressEntry>
   speedMathResult: SpeedMathResult | null
   timerRemainingMs: number | null
+  leaderboard: LeaderboardEntry[]
   leaderboardUpdate: LeaderboardUpdate | null
 }
 
@@ -142,6 +142,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
   const [speedMathResult, setSpeedMathResult] =
     useState<SpeedMathResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
 
   // Connect socket and fetch initial state only when authenticated
@@ -190,34 +191,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     )
 
     socket.on("game:leaderboard_update", (data: LeaderboardUpdate) => {
+      setLeaderboard(data.current)
       setLeaderboardUpdate(data)
     })
 
-    socket.on("game:player_joined", (player: Player) => {
+    socket.on("game:players_sync", (players: Player[]) => {
       setGameState((prev) => {
         if (!prev) return prev
-        const exists = prev.players.some((p) => p.id === player.id)
-        if (exists) {
-          return {
-            ...prev,
-            players: prev.players.map((p) =>
-              p.id === player.id ? player : p
-            ),
-          }
-        }
-        return { ...prev, players: [...prev.players, player] }
-      })
-    })
-
-    socket.on("game:player_left", (data: { id: string }) => {
-      setGameState((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          players: prev.players.map((p) =>
-            p.id === data.id ? { ...p, connected: false } : p
-          ),
-        }
+        return { ...prev, players }
       })
     })
 
@@ -259,8 +240,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("game:submission_count")
       socket.off("game:speed_math_progress")
       socket.off("game:leaderboard_update")
-      socket.off("game:player_joined")
-      socket.off("game:player_left")
+      socket.off("game:players_sync")
       socket.off("player:speed_math_result")
       socket.disconnect()
     }
@@ -272,6 +252,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     speedMathProgress,
     speedMathResult,
     timerRemainingMs,
+    leaderboard,
     leaderboardUpdate,
   }
 

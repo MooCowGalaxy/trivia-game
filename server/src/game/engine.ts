@@ -22,6 +22,51 @@ import {
   checkFinaleAnswer,
 } from './scoring.js';
 
+// ─── Broadcast base type (shared state computed once per broadcast) ──────────
+
+export interface BroadcastBase {
+  gameId: string;
+  hostDiscordId: string;
+  currentState: GameState;
+  players: Array<{
+    id: string;
+    username: string;
+    avatarUrl: string;
+    score: number;
+    connected: boolean;
+  }>;
+  currentRoundIndex: number;
+  currentQuestionIndex: number;
+  currentRound: {
+    roundNumber: number;
+    type: string;
+    title: string;
+    description?: string;
+    typeLabel?: string;
+    timerSeconds: number;
+  } | null;
+  currentQuestion: {
+    id: string;
+    display?: { type: string; src?: string };
+    answerType: string;
+    options?: string[];
+  } | null;
+  timerRemainingMs: number | null;
+  progressBar: { completed: number; total: number };
+  finaleState: {
+    currentQuestionIndex: number;
+    wins: Record<string, number>;
+    finalists: string[];
+    winnerId: string | null;
+  } | null;
+  questionImageData: string | null;
+  questionText: string | null;
+  questionAnswerType: string | null;
+  questionOptions: string[] | null;
+  questionTimerSeconds: number | null;
+  revealAnswer: string | number | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function freshRoundState(): RoundState {
@@ -615,6 +660,7 @@ export class GameEngine {
   /**
    * Returns a state object safe for broadcast to clients.
    * Strips correct answers and internal bookkeeping.
+   * Leaderboard is NOT included — it is sent via a separate event.
    */
   getPublicState(): {
     gameId: string;
@@ -643,7 +689,6 @@ export class GameEngine {
       answerType: string;
       options?: string[];
     } | null;
-    leaderboard: LeaderboardEntry[];
     timerRemainingMs: number | null;
     progressBar: { completed: number; total: number };
     finaleState: {
@@ -680,7 +725,6 @@ export class GameEngine {
           }
         : null,
       currentQuestion: question,
-      leaderboard: this.getLeaderboard(),
       timerRemainingMs: this.getTimerRemainingMs(),
       progressBar: this.getProgressBar(),
       finaleState:
@@ -699,9 +743,207 @@ export class GameEngine {
   }
 
   /**
+   * Computes the shared (non-per-player) portion of the broadcast state,
+   * including image data and reveal answers. Call once per broadcast,
+   * then pass into getPlayerOverlay() for each socket.
+   */
+  computeBroadcastBase(
+    getImageData: (questionId: string) => string | null,
+  ): BroadcastBase {
+    const base = this.getPublicState();
+    const st = this.state.currentState;
+
+    let questionImageData: string | null = null;
+    let questionText: string | null = null;
+    let questionAnswerType: string | null = null;
+    let questionOptions: string[] | null = null;
+    let questionTimerSeconds: number | null = null;
+    let revealAnswer: string | number | null = null;
+
+    const isQuestionActive = st === GameState.QUESTION_ACTIVE;
+    const isQuestionReveal = st === GameState.QUESTION_REVEAL;
+    const isFinaleQuestion = st === GameState.FINALE_QUESTION;
+    const isFinaleReveal = st === GameState.FINALE_REVEAL;
+    const isCountdown = st === GameState.QUESTION_COUNTDOWN;
+
+    if (isCountdown || isQuestionActive || isQuestionReveal || isFinaleQuestion || isFinaleReveal) {
+      const question =
+        isFinaleQuestion || isFinaleReveal
+          ? this.getCurrentFinaleQuestion()
+          : this.getCurrentQuestion();
+
+      if (question) {
+        questionText = question.text ?? null;
+        if (!isCountdown) {
+          questionImageData = getImageData(question.id);
+        }
+        questionAnswerType = question.answerType;
+        questionOptions = question.options ?? null;
+
+        if ((isFinaleQuestion || isFinaleReveal) && this.state.config.finale) {
+          questionTimerSeconds = this.state.config.finale.timerSeconds;
+        } else {
+          questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
+        }
+
+        if (isQuestionReveal || isFinaleReveal) {
+          revealAnswer = question.correctAnswer;
+        }
+      }
+    }
+
+    if (st === GameState.SPEED_MATH_ACTIVE) {
+      questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
+    }
+
+    return {
+      ...base,
+      questionImageData,
+      questionText,
+      questionAnswerType,
+      questionOptions,
+      questionTimerSeconds,
+      revealAnswer,
+    };
+  }
+
+  /**
+   * Returns the per-player overlay on top of a pre-computed broadcast base.
+   * Only computes per-player submission, speed-math state, and round points.
+   */
+  getPlayerOverlay(
+    playerId: string | null,
+    broadcastBase: BroadcastBase,
+  ): ReturnType<GameEngine['getPublicStateForPlayer']> {
+    const st = this.state.currentState;
+
+    let playerSubmission: {
+      answer: string | number;
+      correct: boolean | null;
+      pointsEarned: number | null;
+      pointsBreakdown: { base: number; speedBonus: number } | null;
+    } | null = null;
+    let roundPointsEarned: number | null = null;
+    let roundPointsBreakdown: { base: number; speedBonus: number } | null = null;
+    let speedMathState: {
+      questionIndex: number;
+      imageData: string | null;
+      totalQuestions: number;
+      completed: boolean;
+    } | null = null;
+
+    const isQuestionActive = st === GameState.QUESTION_ACTIVE;
+    const isQuestionReveal = st === GameState.QUESTION_REVEAL;
+    const isFinaleQuestion = st === GameState.FINALE_QUESTION;
+    const isFinaleReveal = st === GameState.FINALE_REVEAL;
+    const isSpeedMath = st === GameState.SPEED_MATH_ACTIVE;
+    const isCountdown = st === GameState.QUESTION_COUNTDOWN;
+
+    if ((isCountdown || isQuestionActive || isQuestionReveal || isFinaleQuestion || isFinaleReveal) && playerId) {
+      const question =
+        isFinaleQuestion || isFinaleReveal
+          ? this.getCurrentFinaleQuestion()
+          : this.getCurrentQuestion();
+
+      if (question) {
+        const submissionStore =
+          (isFinaleQuestion || isFinaleReveal)
+            ? this.state.finaleState.submissions
+            : this.getCurrentRoundState().submissions;
+        const subs = submissionStore.get(question.id) ?? [];
+        const playerSub = subs.find((s) => s.playerId === playerId);
+        if (playerSub) {
+          const isCorrect = (isQuestionReveal || isFinaleReveal)
+            ? String(playerSub.answer).trim().toLowerCase() ===
+              String(question.correctAnswer).trim().toLowerCase()
+            : null;
+          let pointsEarned: number | null = null;
+          let pointsBreakdown: { base: number; speedBonus: number } | null = null;
+          if (isQuestionReveal || isFinaleReveal) {
+            const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
+            if (roundScoreMap) {
+              const questionScores = roundScoreMap.get(question.id);
+              pointsEarned = questionScores?.get(playerId) ?? 0;
+            }
+            const isFermi = question.answerType === 'fermi' || question.scoringMode === 'fermi';
+            if (pointsEarned != null && pointsEarned > 0 && !isFermi) {
+              const roundConfig = (isFinaleReveal) ? null : this.getCurrentRoundConfig();
+              const basePoints = roundConfig?.basePoints ?? 0;
+              pointsBreakdown = {
+                base: Math.min(pointsEarned, basePoints),
+                speedBonus: Math.max(0, pointsEarned - basePoints),
+              };
+            } else if (pointsEarned != null && isFermi) {
+              pointsBreakdown = { base: pointsEarned, speedBonus: 0 };
+            }
+          }
+          playerSubmission = { answer: playerSub.answer, correct: isCorrect, pointsEarned, pointsBreakdown };
+        }
+      }
+    }
+
+    // Speed math: per-player state
+    if (isSpeedMath && playerId) {
+      const roundState = this.getCurrentRoundState();
+      const playerSpeedState = roundState.speedMathStates.get(playerId);
+      const generatedQs = this.state.generatedQuestions.get(this.state.currentRoundIndex);
+      const totalQuestions = generatedQs?.length ?? 0;
+      const qIdx = playerSpeedState?.currentQuestionIndex ?? 0;
+      const q = generatedQs?.[qIdx];
+      const completed = playerSpeedState?.completedAt !== null && playerSpeedState?.completedAt !== undefined;
+
+      speedMathState = {
+        questionIndex: qIdx,
+        imageData: q?.imageDataUrl ?? null,
+        totalQuestions,
+        completed,
+      };
+    }
+
+    // Round results points
+    if (st === GameState.ROUND_RESULTS && playerId) {
+      const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
+      if (roundScoreMap) {
+        let total = 0;
+        for (const [, questionScores] of roundScoreMap) {
+          total += questionScores.get(playerId) ?? 0;
+        }
+        roundPointsEarned = total;
+
+        const roundConfig = this.getCurrentRoundConfig();
+        if (roundConfig.type === 'speed_math') {
+          const roundState = this.getCurrentRoundState();
+          const playerSpeedState = roundState.speedMathStates.get(playerId);
+          const generatedQs = this.state.generatedQuestions.get(this.state.currentRoundIndex);
+          const totalQs = generatedQs?.length ?? roundConfig.generatorParams?.questionCount ?? 0;
+          const correctCount = playerSpeedState?.correctCount ?? 0;
+          const accuracyBase = Math.floor(roundConfig.basePoints * (correctCount / totalQs));
+          roundPointsBreakdown = {
+            base: accuracyBase,
+            speedBonus: Math.max(0, total - accuracyBase),
+          };
+        } else {
+          roundPointsBreakdown = { base: total, speedBonus: 0 };
+        }
+      }
+    }
+
+    return {
+      ...broadcastBase,
+      playerSubmission,
+      roundPointsEarned,
+      roundPointsBreakdown,
+      speedMathState,
+    };
+  }
+
+  /**
    * Returns a per-player state object that includes everything from
    * getPublicState() plus image data, answer info, and speed-math state
    * so the client can fully render any view without ephemeral events.
+   *
+   * NOTE: For broadcasts to many sockets, prefer computeBroadcastBase() +
+   * getPlayerOverlay() to avoid recomputing the shared state N times.
    */
   getPublicStateForPlayer(
     playerId: string | null,
@@ -733,7 +975,6 @@ export class GameEngine {
       answerType: string;
       options?: string[];
     } | null;
-    leaderboard: LeaderboardEntry[];
     timerRemainingMs: number | null;
     progressBar: { completed: number; total: number };
     finaleState: {
@@ -758,172 +999,8 @@ export class GameEngine {
       completed: boolean;
     } | null;
   } {
-    const base = this.getPublicState();
-    const st = this.state.currentState;
-
-    let questionImageData: string | null = null;
-    let questionText: string | null = null;
-    let questionAnswerType: string | null = null;
-    let questionOptions: string[] | null = null;
-    let questionTimerSeconds: number | null = null;
-    let revealAnswer: string | number | null = null;
-    let playerSubmission: {
-      answer: string | number;
-      correct: boolean | null;
-      pointsEarned: number | null;
-      pointsBreakdown: { base: number; speedBonus: number } | null;
-    } | null = null;
-    let roundPointsEarned: number | null = null;
-    let roundPointsBreakdown: { base: number; speedBonus: number } | null = null;
-    let speedMathState: {
-      questionIndex: number;
-      imageData: string | null;
-      totalQuestions: number;
-      completed: boolean;
-    } | null = null;
-
-    // Determine the active question for standard / finale states
-    const isQuestionActive = st === GameState.QUESTION_ACTIVE;
-    const isQuestionReveal = st === GameState.QUESTION_REVEAL;
-    const isFinaleQuestion = st === GameState.FINALE_QUESTION;
-    const isFinaleReveal = st === GameState.FINALE_REVEAL;
-    const isSpeedMath = st === GameState.SPEED_MATH_ACTIVE;
-
-    const isCountdown = st === GameState.QUESTION_COUNTDOWN;
-
-    if (isCountdown || isQuestionActive || isQuestionReveal || isFinaleQuestion || isFinaleReveal) {
-      const question =
-        isFinaleQuestion || isFinaleReveal
-          ? this.getCurrentFinaleQuestion()
-          : this.getCurrentQuestion();
-
-      if (question) {
-        // Show text during countdown, but image only after countdown
-        questionText = question.text ?? null;
-        if (!isCountdown) {
-          questionImageData = getImageData(question.id);
-        }
-        questionAnswerType = question.answerType;
-        questionOptions = question.options ?? null;
-
-        if ((isFinaleQuestion || isFinaleReveal) && this.state.config.finale) {
-          questionTimerSeconds = this.state.config.finale.timerSeconds;
-        } else {
-          questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
-        }
-
-        // Look up the requesting player's submission for this question (active + reveal)
-        if (playerId) {
-          const submissionStore =
-            (isFinaleQuestion || isFinaleReveal)
-              ? this.state.finaleState.submissions
-              : this.getCurrentRoundState().submissions;
-          const subs = submissionStore.get(question.id) ?? [];
-          const playerSub = subs.find((s) => s.playerId === playerId);
-          if (playerSub) {
-            // Only include correctness during reveal states
-            const isCorrect = (isQuestionReveal || isFinaleReveal)
-              ? String(playerSub.answer).trim().toLowerCase() ===
-                String(question.correctAnswer).trim().toLowerCase()
-              : null;
-            // Look up points earned during reveal
-            let pointsEarned: number | null = null;
-            let pointsBreakdown: { base: number; speedBonus: number } | null = null;
-            if (isQuestionReveal || isFinaleReveal) {
-              const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
-              if (roundScoreMap) {
-                const questionScores = roundScoreMap.get(question.id);
-                pointsEarned = questionScores?.get(playerId) ?? 0;
-              }
-              // Compute breakdown for non-fermi standard questions
-              const isFermi = question.answerType === 'fermi' || question.scoringMode === 'fermi';
-              if (pointsEarned != null && pointsEarned > 0 && !isFermi) {
-                const roundConfig = (isFinaleReveal) ? null : this.getCurrentRoundConfig();
-                const basePoints = roundConfig?.basePoints ?? 0;
-                pointsBreakdown = {
-                  base: Math.min(pointsEarned, basePoints),
-                  speedBonus: Math.max(0, pointsEarned - basePoints),
-                };
-              } else if (pointsEarned != null && isFermi) {
-                // Fermi: all points are rank-based, no speed bonus
-                pointsBreakdown = { base: pointsEarned, speedBonus: 0 };
-              }
-            }
-            playerSubmission = { answer: playerSub.answer, correct: isCorrect, pointsEarned, pointsBreakdown };
-          }
-        }
-
-        // Only reveal the correct answer during reveal states
-        if (isQuestionReveal || isFinaleReveal) {
-          revealAnswer = question.correctAnswer;
-        }
-      }
-    }
-
-    // Speed math: per-player state
-    if (isSpeedMath && playerId) {
-      const roundState = this.getCurrentRoundState();
-      const playerSpeedState = roundState.speedMathStates.get(playerId);
-      const generatedQs = this.state.generatedQuestions.get(this.state.currentRoundIndex);
-      const totalQuestions = generatedQs?.length ?? 0;
-      const qIdx = playerSpeedState?.currentQuestionIndex ?? 0;
-      const q = generatedQs?.[qIdx];
-      const completed = playerSpeedState?.completedAt !== null && playerSpeedState?.completedAt !== undefined;
-
-      speedMathState = {
-        questionIndex: qIdx,
-        imageData: q?.imageDataUrl ?? null,
-        totalQuestions,
-        completed,
-      };
-
-      // Also populate timerSeconds for speed math
-      questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
-    }
-
-    // Compute total points earned in the current round during ROUND_RESULTS
-    if (st === GameState.ROUND_RESULTS && playerId) {
-      const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
-      if (roundScoreMap) {
-        let total = 0;
-        for (const [, questionScores] of roundScoreMap) {
-          total += questionScores.get(playerId) ?? 0;
-        }
-        roundPointsEarned = total;
-
-        // Compute breakdown for speed math rounds
-        const roundConfig = this.getCurrentRoundConfig();
-        if (roundConfig.type === 'speed_math') {
-          const roundState = this.getCurrentRoundState();
-          const playerSpeedState = roundState.speedMathStates.get(playerId);
-          const generatedQs = this.state.generatedQuestions.get(this.state.currentRoundIndex);
-          const totalQs = generatedQs?.length ?? roundConfig.generatorParams?.questionCount ?? 0;
-          const correctCount = playerSpeedState?.correctCount ?? 0;
-          const accuracyBase = Math.floor(roundConfig.basePoints * (correctCount / totalQs));
-          roundPointsBreakdown = {
-            base: accuracyBase,
-            speedBonus: Math.max(0, total - accuracyBase),
-          };
-        } else {
-          // For multi-question rounds, sum up is the total; breakdown per-question is shown on reveal
-          roundPointsBreakdown = { base: total, speedBonus: 0 };
-        }
-      }
-    }
-
-    return {
-      ...base,
-      questionImageData,
-      questionText,
-      questionAnswerType,
-      questionOptions,
-      questionTimerSeconds,
-      revealAnswer,
-      playerSubmission,
-      roundPointsEarned,
-      roundPointsBreakdown,
-      speedMathState,
-    };
+    const broadcastBase = this.computeBroadcastBase(getImageData);
+    return this.getPlayerOverlay(playerId, broadcastBase);
   }
 
   /**

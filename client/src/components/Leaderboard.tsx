@@ -2,6 +2,7 @@ import { useContext } from "react"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { AuthContext } from "@/context/AuthContext"
+import { truncateLeaderboard } from "@/lib/truncateLeaderboard"
 
 export interface LeaderboardEntry {
   id: string
@@ -29,6 +30,14 @@ const rankBgColors: Record<number, string> = {
   3: "bg-amber-600/10 border-amber-600/30",
 }
 
+function Ellipsis() {
+  return (
+    <div className="flex items-center justify-center py-1 text-muted-foreground text-sm">
+      ...
+    </div>
+  )
+}
+
 export function Leaderboard({
   entries,
   highlightTop = 3,
@@ -36,10 +45,17 @@ export function Leaderboard({
 }: LeaderboardProps) {
   const authCtx = useContext(AuthContext)
   const currentUserId = authCtx?.user?.discordId
+
+  const items = truncateLeaderboard(entries, currentUserId ?? null)
+
   return (
     <div className={cn("space-y-1", className)}>
-      {entries.map((entry, index) => {
-        const rank = index + 1
+      {items.map((item) => {
+        if (item.type === "ellipsis") {
+          return <Ellipsis key={item.key} />
+        }
+
+        const { entry, rank } = item
         const isHighlighted = rank <= highlightTop
         const isDisconnected = entry.connected === false
         const isYou = entry.id === currentUserId

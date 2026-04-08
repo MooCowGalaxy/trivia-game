@@ -12,12 +12,11 @@ import { useGameState } from "@/hooks/useGameState"
 import { BarChart3 } from "lucide-react"
 
 export function LeaderboardModal() {
-  const { gameState } = useGameState()
+  const { gameState, leaderboard } = useGameState()
   const [open, setOpen] = useState(false)
 
   if (!gameState) return null
-
-  const entries = gameState.leaderboard.map((e) => {
+  const entries = leaderboard.map((e) => {
     const player = gameState.players.find((p) => p.id === e.playerId)
     return {
       id: e.playerId,

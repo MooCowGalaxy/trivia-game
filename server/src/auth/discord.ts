@@ -56,7 +56,7 @@ export function createAuthRouter(onDevHost?: (discordId: string) => void): Route
       avatarUrl,
     };
 
-    const token = jwt.sign(payload, jwtSecret, { expiresIn: "24h" });
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: "30d" });
 
     // Return JSON so each tab can store the token in sessionStorage (per-tab)
     res.json({ token, user: payload });
@@ -81,7 +81,7 @@ export function createAuthRouter(onDevHost?: (discordId: string) => void): Route
       isGuest: true,
     };
 
-    const token = jwt.sign(payload, jwtSecret, { expiresIn: "24h" });
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: "30d" });
     res.json({ token, user: payload });
   });
 
@@ -172,13 +172,13 @@ export function createAuthRouter(onDevHost?: (discordId: string) => void): Route
         avatarUrl,
       };
 
-      const token = jwt.sign(payload, jwtSecret, { expiresIn: "24h" });
+      const token = jwt.sign(payload, jwtSecret, { expiresIn: "30d" });
 
       // Set httpOnly cookie and redirect to frontend
       res.cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours in ms
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in ms
         sameSite: "lax",
         path: "/",
       });

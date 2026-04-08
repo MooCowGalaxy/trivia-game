@@ -14,7 +14,8 @@ export function RoundResults() {
   const roundNumber =
     gameState.currentRound?.roundNumber ?? gameState.currentRoundIndex + 1
 
-  const entries = gameState.leaderboard.map((e) => {
+  const leaderboard = ctx?.leaderboard ?? []
+  const entries = leaderboard.map((e) => {
     const player = gameState.players.find((p) => p.id === e.playerId)
     return {
       id: e.playerId,

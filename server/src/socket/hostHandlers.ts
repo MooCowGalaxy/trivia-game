@@ -20,11 +20,31 @@ export function registerHostHandlers(
     }
   }
 
+  // States where the overlay adds per-player data (submission, speed math, round points)
+  const perPlayerStates = new Set([
+    GameState.QUESTION_ACTIVE,
+    GameState.QUESTION_REVEAL,
+    GameState.SPEED_MATH_ACTIVE,
+    GameState.FINALE_QUESTION,
+    GameState.FINALE_REVEAL,
+    GameState.ROUND_RESULTS,
+  ]);
+
   function broadcastState(): void {
-    for (const [, s] of io.sockets.sockets) {
-      const u = s.data.user as JwtPayload | undefined;
-      const pid = u?.discordId ?? null;
-      s.emit('game:state_change', engine.getPublicStateForPlayer(pid, getQuestionImageData));
+    const base = engine.computeBroadcastBase(getQuestionImageData);
+    const st = engine.getGameState();
+
+    if (perPlayerStates.has(st)) {
+      // Per-player overlay needed — loop sockets
+      for (const [, s] of io.sockets.sockets) {
+        const u = s.data.user as JwtPayload | undefined;
+        const pid = u?.discordId ?? null;
+        s.emit('game:state_change', engine.getPlayerOverlay(pid, base));
+      }
+    } else {
+      // Identical payload for everyone — single broadcast, no per-socket loop
+      const payload = engine.getPlayerOverlay(null, base);
+      io.emit('game:state_change', payload);
     }
   }
 

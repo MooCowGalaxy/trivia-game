@@ -3,6 +3,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { AuthContext } from "@/context/AuthContext"
 import type { LeaderboardUpdate } from "@/context/GameContext"
+import { truncateLeaderboard } from "@/lib/truncateLeaderboard"
 import { ArrowUp, ArrowDown, Minus } from "lucide-react"
 
 export interface LeaderboardDisplayEntry {
@@ -177,12 +178,23 @@ function AnimatedEntry({
   )
 }
 
+function Ellipsis() {
+  return (
+    <div className="flex items-center justify-center py-1 text-muted-foreground text-sm">
+      ...
+    </div>
+  )
+}
+
 export function AnimatedLeaderboard({
   entries,
   leaderboardUpdate,
   highlightTop = 3,
   className,
 }: AnimatedLeaderboardProps) {
+  const authCtx = useContext(AuthContext)
+  const currentUserId = authCtx?.user?.discordId ?? null
+
   // Build lookup maps from the update data
   const shouldAnimate = leaderboardUpdate !== null
   const previousRankMap = new Map<string, number>()
@@ -195,10 +207,16 @@ export function AnimatedLeaderboard({
     })
   }
 
+  const items = truncateLeaderboard(entries, currentUserId)
+
   return (
     <div className={cn("space-y-1", className)}>
-      {entries.map((entry, index) => {
-        const newRank = index + 1
+      {items.map((item) => {
+        if (item.type === "ellipsis") {
+          return <Ellipsis key={item.key} />
+        }
+
+        const { entry, rank: newRank } = item
         const oldRank = previousRankMap.get(entry.id) ?? newRank
         const oldScore = previousScoreMap.get(entry.id) ?? entry.score
 

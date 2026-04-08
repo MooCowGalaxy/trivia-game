@@ -13,7 +13,8 @@ export function QuestionReveal() {
 
   if (!gameState) return null
 
-  const entries = gameState.leaderboard.map((e) => {
+  const leaderboard = ctx?.leaderboard ?? []
+  const entries = leaderboard.map((e) => {
     const player = gameState.players.find((p) => p.id === e.playerId)
     return {
       id: e.playerId,

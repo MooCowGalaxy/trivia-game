@@ -93,7 +93,14 @@ function resolveImagePath(src: string): string {
   return path.resolve(assetsDir, relativeSrc);
 }
 
+// ── Image cache: read and base64-encode each image only once ─────────────────
+
+const imageCache = new Map<string, string | null>();
+
 function readImageAsDataUrl(imagePath: string): string | null {
+  const cached = imageCache.get(imagePath);
+  if (cached !== undefined) return cached;
+
   try {
     const imageBuffer = fs.readFileSync(imagePath);
     const ext = path.extname(imagePath).slice(1).toLowerCase();
@@ -102,12 +109,32 @@ function readImageAsDataUrl(imagePath: string): string | null {
       : ext === 'gif' ? 'image/gif'
       : ext === 'webp' ? 'image/webp'
       : 'image/png';
-    return `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+    const dataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+    imageCache.set(imagePath, dataUrl);
+    return dataUrl;
   } catch (err) {
     console.error(`Failed to read image at ${imagePath}:`, err);
+    imageCache.set(imagePath, null);
     return null;
   }
 }
+
+// Pre-build a lookup from questionId → image data URL for all static image questions
+const questionImageCache = new Map<string, string | null>();
+
+function buildQuestionImageCache(): void {
+  const allQuestions = [
+    ...gameConfig.rounds.flatMap((r) => r.questions ?? []),
+    ...(gameConfig.finale?.questions ?? []),
+  ];
+  for (const question of allQuestions) {
+    if (question.display?.type === 'image' && question.display.src) {
+      questionImageCache.set(question.id, readImageAsDataUrl(resolveImagePath(question.display.src)));
+    }
+  }
+}
+
+buildQuestionImageCache();
 
 function getQuestionImageData(questionId: string): string | null {
   // Check generated questions first (speed math)
@@ -118,17 +145,9 @@ function getQuestionImageData(questionId: string): string | null {
     }
   }
 
-  // Check static image questions in all rounds and finale
-  const allQuestions = [
-    ...gameConfig.rounds.flatMap((r) => r.questions ?? []),
-    ...(gameConfig.finale?.questions ?? []),
-  ];
-
-  for (const question of allQuestions) {
-    if (question.id === questionId && question.display?.type === 'image' && question.display.src) {
-      return readImageAsDataUrl(resolveImagePath(question.display.src));
-    }
-  }
+  // Check pre-cached static image questions
+  const cached = questionImageCache.get(questionId);
+  if (cached !== undefined) return cached;
 
   return null;
 }
@@ -154,7 +173,15 @@ const authLimiter = rateLimit({
 const authRouter = createAuthRouter((devHostId) => {
   gameConfig.settings.hostDiscordId = devHostId;
 });
-app.use('/auth', authLimiter, authRouter);
+// In dev mode, skip rate limiting on /auth/dev so load tests can create many tokens
+const isDevMode = process.env.DEV_MODE === 'true';
+const conditionalAuthLimiter: express.RequestHandler = (req, res, next) => {
+  if (isDevMode && req.path === '/dev') {
+    return next();
+  }
+  return authLimiter(req, res, next);
+};
+app.use('/auth', conditionalAuthLimiter, authRouter);
 
 // Serve client build (static assets)
 const clientDistDir = path.resolve(__dirname, '..', '..', 'client', 'dist');
@@ -185,6 +212,26 @@ const io = new Server(httpServer, {
 // Authenticate all socket connections
 io.use(authenticateSocket);
 
+// ── Debounced player list sync ────────────────────────────────────────────────
+// Batches rapid player_joined / player_left events into a single broadcast.
+
+let playerSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function schedulePlayerSync(): void {
+  if (playerSyncTimer) return; // already scheduled
+  playerSyncTimer = setTimeout(() => {
+    playerSyncTimer = null;
+    const players = Array.from(engine.getPlayers().values()).map((p) => ({
+      id: p.id,
+      username: p.username,
+      avatarUrl: p.avatarUrl,
+      score: p.score,
+      connected: p.connected,
+    }));
+    io.emit('game:players_sync', players);
+  }, 500);
+}
+
 // ── Socket connection handler ─────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
@@ -198,8 +245,10 @@ io.on('connection', (socket) => {
   // Guests are always spectators — skip player management
   if (user.isGuest) {
     console.log(`  Guest spectator connected: ${user.username}`);
-    socket.emit('game:state_change', engine.getPublicStateForPlayer(null, getQuestionImageData));
-    registerPlayerHandlers(socket, io, engine, getQuestionImageData);
+    const guestBase = engine.computeBroadcastBase(getQuestionImageData);
+    socket.emit('game:state_change', engine.getPlayerOverlay(null, guestBase));
+    socket.emit('game:leaderboard_update', { previous: engine.getLeaderboard(), current: engine.getLeaderboard() });
+    registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync);
 
     socket.on('disconnect', () => {
       console.log(`  Guest spectator disconnected: ${user.username}`);
@@ -213,21 +262,13 @@ io.on('connection', (socket) => {
     console.log(`  Reconnected player: ${user.username}`);
 
     if (reconnected) {
-      // Notify others this player is back online
-      io.emit('game:player_joined', {
-        id: reconnected.id,
-        username: reconnected.username,
-        avatarUrl: reconnected.avatarUrl,
-        score: reconnected.score,
-        connected: true,
-      });
+      // Batch-notify others about player roster change
+      schedulePlayerSync();
 
-      // Broadcast per-player state to all sockets
-      for (const [, s] of io.sockets.sockets) {
-        const u = s.data.user as JwtPayload | undefined;
-        const pid = u?.discordId ?? null;
-        s.emit('game:state_change', engine.getPublicStateForPlayer(pid, getQuestionImageData));
-      }
+      // Send full state only to the reconnecting player
+      const base = engine.computeBroadcastBase(getQuestionImageData);
+      socket.emit('game:state_change', engine.getPlayerOverlay(user.discordId, base));
+      socket.emit('game:leaderboard_update', { previous: engine.getLeaderboard(), current: engine.getLeaderboard() });
     }
   } else if (currentState === GameState.LOBBY) {
     // New player joining during lobby (host is also a player)
@@ -236,28 +277,21 @@ io.on('connection', (socket) => {
       player.socketId = socket.id;
       console.log(`  New player added: ${user.username}`);
 
-      // Broadcast to everyone that a new player joined
-      io.emit('game:player_joined', {
-        id: player.id,
-        username: player.username,
-        avatarUrl: player.avatarUrl,
-        score: player.score,
-        connected: player.connected,
-      });
+      // Batch-notify others about player roster change
+      schedulePlayerSync();
 
-      // Broadcast per-player state to all sockets
-      for (const [, s] of io.sockets.sockets) {
-        const u = s.data.user as JwtPayload | undefined;
-        const pid = u?.discordId ?? null;
-        s.emit('game:state_change', engine.getPublicStateForPlayer(pid, getQuestionImageData));
-      }
+      // Send full state only to the joining player
+      const base = engine.computeBroadcastBase(getQuestionImageData);
+      socket.emit('game:state_change', engine.getPlayerOverlay(user.discordId, base));
     } catch (err) {
       console.error(`  Failed to add player ${user.username}:`, err);
     }
   } else {
     // Game has left lobby — connect as spectator (they can join via player:join_game)
     console.log(`  Spectator connected: ${user.username} (game in ${currentState})`);
-    socket.emit('game:state_change', engine.getPublicStateForPlayer(null, getQuestionImageData));
+    const specBase = engine.computeBroadcastBase(getQuestionImageData);
+    socket.emit('game:state_change', engine.getPlayerOverlay(null, specBase));
+    socket.emit('game:leaderboard_update', { previous: engine.getLeaderboard(), current: engine.getLeaderboard() });
   }
 
   // Register host handlers if this is the host
@@ -266,7 +300,7 @@ io.on('connection', (socket) => {
   }
 
   // Register player handlers for all connections (handles submit, disconnect, reconnect logic)
-  registerPlayerHandlers(socket, io, engine, getQuestionImageData);
+  registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync);
 });
 
 // ── Start listening ───────────────────────────────────────────────────────────
