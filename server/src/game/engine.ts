@@ -641,6 +641,42 @@ export class GameEngine {
     return this.getLeaderboard().slice(0, topN);
   }
 
+  /** Check if all connected players have submitted an answer for the current question. */
+  haveAllPlayersAnswered(): boolean {
+    const st = this.state.currentState;
+    if (st !== GameState.QUESTION_ACTIVE && st !== GameState.FINALE_QUESTION) {
+      return false;
+    }
+
+    const question =
+      st === GameState.FINALE_QUESTION
+        ? this.getCurrentFinaleQuestion()
+        : this.getCurrentQuestion();
+    if (!question) return false;
+
+    const submissionStore =
+      st === GameState.FINALE_QUESTION
+        ? this.state.finaleState.submissions
+        : this.getCurrentRoundState().submissions;
+    const submissions = submissionStore.get(question.id) ?? [];
+    const submittedIds = new Set(submissions.map((s) => s.playerId));
+
+    // In finale, only finalists need to answer
+    if (st === GameState.FINALE_QUESTION) {
+      return this.state.finaleState.finalists.every((id) => submittedIds.has(id));
+    }
+
+    // Standard question: all connected players except the host
+    const hostId = this.state.config.settings.hostDiscordId;
+    for (const [id, player] of this.state.players) {
+      if (id === hostId) continue;
+      if (player.connected && !submittedIds.has(id)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   getPlayers(): Map<string, Player> {
     return this.state.players;
   }

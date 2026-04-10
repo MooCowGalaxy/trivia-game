@@ -11,6 +11,7 @@ export class GameTimer {
   private duration: number = 0;
   private expired: boolean = false;
   private stopped: boolean = false;
+  private onExpireCallback: (() => void) | null = null;
 
   /**
    * Start a countdown.
@@ -30,6 +31,7 @@ export class GameTimer {
     this.startTime = Date.now();
     this.expired = false;
     this.stopped = false;
+    this.onExpireCallback = onExpire;
 
     // Tick every second
     this.intervalId = setInterval(() => {
@@ -68,6 +70,14 @@ export class GameTimer {
   stop(): void {
     this.stopped = true;
     this.clearTimers();
+  }
+
+  /** Force the timer to expire immediately, triggering `onExpire`. */
+  forceExpire(): void {
+    if (this.expired || this.stopped) return;
+    if (this.onExpireCallback) {
+      this.handleExpiry(this.onExpireCallback);
+    }
   }
 
   // ── internals ──────────────────────────────────────────────────────────

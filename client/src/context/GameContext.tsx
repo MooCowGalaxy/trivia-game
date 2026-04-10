@@ -173,7 +173,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     })
 
     socket.on("game:timer_sync", (data: { remainingMs: number }) => {
-      setTimerRemainingMs(data.remainingMs)
+      setTimerRemainingMs((prev) => {
+        // Ignore timer syncs that jump up (new timer started before
+        // the corresponding state_change arrived on this client)
+        if (prev !== null && data.remainingMs > prev + 1500) {
+          return prev
+        }
+        return data.remainingMs
+      })
     })
 
     socket.on("game:submission_count", (data: SubmissionCount) => {

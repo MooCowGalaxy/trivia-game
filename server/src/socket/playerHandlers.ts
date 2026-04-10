@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import type { GameEngine } from '../game/engine.js';
+import type { GameTimer } from '../game/timer.js';
 import { GameState } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
 
@@ -24,9 +25,16 @@ function createRateLimiter(maxPerWindow: number, windowMs: number) {
 let submissionCountTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSubmissionCount: { questionId: string; io: Server; engine: GameEngine } | null = null;
 
+let broadcastDebounceMs = 500;
+
+/** Called once from index.ts to set the debounce interval from env. */
+export function setBroadcastDebounceMs(ms: number): void {
+  broadcastDebounceMs = ms;
+}
+
 function scheduleSubmissionCountBroadcast(questionId: string, ioRef: Server, engineRef: GameEngine): void {
   pendingSubmissionCount = { questionId, io: ioRef, engine: engineRef };
-  if (submissionCountTimer) return; // already scheduled
+  if (submissionCountTimer) return;
   submissionCountTimer = setTimeout(() => {
     submissionCountTimer = null;
     if (!pendingSubmissionCount) return;
@@ -39,7 +47,7 @@ function scheduleSubmissionCountBroadcast(questionId: string, ioRef: Server, eng
       count: getSubmissionCount(eng, qId),
       total: totalPlayers,
     });
-  }, 500); // batch into at most 1 emit per 500ms
+  }, broadcastDebounceMs);
 }
 
 let speedMathProgressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -59,7 +67,7 @@ function scheduleSpeedMathProgressBroadcast(ioRef: Server, engineRef: GameEngine
       completed: comp,
       totalQuestions: eng.getGeneratedQuestionsForCurrentRound().length,
     });
-  }, 500);
+  }, broadcastDebounceMs);
 }
 
 export function registerPlayerHandlers(
@@ -68,6 +76,7 @@ export function registerPlayerHandlers(
   engine: GameEngine,
   getQuestionImageData: (questionId: string) => string | null,
   schedulePlayerSync: () => void,
+  timer: GameTimer,
 ): void {
   const user = socket.data.user as JwtPayload;
   const playerId = user.discordId;
@@ -99,6 +108,11 @@ export function registerPlayerHandlers(
 
         // Debounced broadcast of submission count (batches rapid submissions)
         scheduleSubmissionCountBroadcast(questionId, io, engine);
+
+        // End timer early if all connected players have answered
+        if (engine.haveAllPlayersAnswered()) {
+          timer.forceExpire();
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

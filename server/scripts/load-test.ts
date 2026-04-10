@@ -235,7 +235,7 @@ function createClient(token: string): Socket {
     }
 
     const timerMs = (state.questionTimerSeconds ?? 15) * 1000;
-    const maxDelay = Math.max(timerMs - 1000, 1000); // leave 1s buffer
+    const maxDelay = Math.max(timerMs * 0.5, 1000); // submit within first 50% of timer
 
     answeredQuestionId = question.id;
 

@@ -18,7 +18,12 @@ import { GameTimer } from './game/timer.js';
 import { GameState } from './game/types.js';
 import type { GeneratedQuestion } from './game/types.js';
 import { registerHostHandlers } from './socket/hostHandlers.js';
-import { registerPlayerHandlers } from './socket/playerHandlers.js';
+import { registerPlayerHandlers, setBroadcastDebounceMs } from './socket/playerHandlers.js';
+
+// ── Broadcast debounce interval (ms) ─────────────────────────────────────────
+
+const DEBOUNCE_MS = parseInt(process.env.BROADCAST_DEBOUNCE_MS ?? '500', 10);
+setBroadcastDebounceMs(DEBOUNCE_MS);
 
 // ── Load game config ──────────────────────────────────────────────────────────
 
@@ -229,7 +234,7 @@ function schedulePlayerSync(): void {
       connected: p.connected,
     }));
     io.emit('game:players_sync', players);
-  }, 500);
+  }, DEBOUNCE_MS);
 }
 
 // ── Socket connection handler ─────────────────────────────────────────────────
@@ -248,7 +253,7 @@ io.on('connection', (socket) => {
     const guestBase = engine.computeBroadcastBase(getQuestionImageData);
     socket.emit('game:state_change', engine.getPlayerOverlay(null, guestBase));
     socket.emit('game:leaderboard_update', { previous: engine.getLeaderboard(), current: engine.getLeaderboard() });
-    registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync);
+    registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync, timer);
 
     socket.on('disconnect', () => {
       console.log(`  Guest spectator disconnected: ${user.username}`);
@@ -300,7 +305,7 @@ io.on('connection', (socket) => {
   }
 
   // Register player handlers for all connections (handles submit, disconnect, reconnect logic)
-  registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync);
+  registerPlayerHandlers(socket, io, engine, getQuestionImageData, schedulePlayerSync, timer);
 });
 
 // ── Start listening ───────────────────────────────────────────────────────────

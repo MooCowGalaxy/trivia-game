@@ -38,14 +38,29 @@ export function QuestionActive() {
 
   const timerSeconds = gameState.questionTimerSeconds ?? 0
 
+  const round = gameState.currentRound
+  const questionIndex = gameState.currentQuestionIndex
+  const submissionCount = ctx?.submissionCount
+
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
       <div className="w-full max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
-        {isFinale && (
+        {isFinale ? (
           <div className="text-center">
             <Badge variant="destructive" className="text-sm px-4 py-1">
               SUDDEN DEATH
             </Badge>
+          </div>
+        ) : round && (
+          <div className="text-center space-y-2">
+            <p className="text-sm text-muted-foreground font-medium uppercase tracking-widest">
+              {round.title} · Question {questionIndex + 1}
+            </p>
+            {submissionCount && (
+              <p className="text-xs text-muted-foreground">
+                {submissionCount.count}/{submissionCount.total} answered
+              </p>
+            )}
           </div>
         )}
 

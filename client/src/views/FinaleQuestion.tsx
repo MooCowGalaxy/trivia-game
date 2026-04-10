@@ -49,6 +49,11 @@ export function FinaleQuestion() {
               Question {finaleState.currentQuestionIndex + 1}
             </p>
           )}
+          {ctx?.submissionCount && (
+            <p className="text-xs text-muted-foreground">
+              {ctx.submissionCount.count}/{ctx.submissionCount.total} answered
+            </p>
+          )}
         </div>
 
         <Timer
