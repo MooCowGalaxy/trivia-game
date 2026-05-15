@@ -76,6 +76,9 @@ LOBBY
   └─ start_game ─► ROUND_INTRO
                       ├─ start_round (speed_math) ─► SPEED_MATH_ACTIVE
                       │                                 └─ timer expires ─► ROUND_RESULTS
+                      ├─ start_round (fifteen) ─► FIFTEEN_ACTIVE
+                      │                              ├─ first N verified solvers ─► ROUND_RESULTS
+                      │                              └─ timer / host ends round ─► ROUND_RESULTS
                       └─ start_round (other) ─► QUESTION_COUNTDOWN (3s)
                                                    └─ timer expires ─► QUESTION_ACTIVE
                                                                           └─ timer expires ─► QUESTION_REVEAL
@@ -100,6 +103,8 @@ All transitions are host-initiated. Timers are server-authoritative.
 **Standard rounds**: `basePoints + speedBonus` for correct answers, 0 for incorrect. Speed bonus is rank-based among correct answerers (earliest submission = highest bonus).
 
 **Speed math**: `floor(basePoints * correctCount / totalQuestions)` + speed bonus for players who completed all questions, ranked by completion time.
+
+**Fifteen**: The server generates one shared solvable 4x4 board. Clients submit a Base64-packed 4-bit move list after local solve detection; the server replays every move and scores only the first configured N verified solvers using standard base + rank speed bonus.
 
 **Fermi estimation**: Rank by proximity to correct answer (`|playerAnswer - correctAnswer|`). Points linearly scaled from max to 0 based on rank.
 
@@ -128,11 +133,11 @@ No question text or answers are ever sent to the client as raw data. The client 
 
 **Host → Server**: `host:start_game`, `host:start_round`, `host:next_question`, `host:next_round`, `host:start_finale`, `host:next_finale_question`, `host:end_game`
 
-**Player → Server**: `player:submit_answer`, `player:speed_math_answer`, `player:join_game`, `player:spectate`
+**Player → Server**: `player:submit_answer`, `player:speed_math_answer`, `player:fifteen_solve`, `player:join_game`, `player:spectate`
 
-**Server → All**: `game:state_change` (per-player state snapshot), `game:timer_sync`, `game:submission_count`, `game:speed_math_progress`, `game:leaderboard_update`, `game:player_joined`, `game:player_left`
+**Server → All**: `game:state_change` (per-player state snapshot), `game:timer_sync`, `game:submission_count`, `game:speed_math_progress`, `game:fifteen_progress`, `game:leaderboard_update`, `game:player_joined`, `game:player_left`
 
-**Server → Individual**: `player:speed_math_result`
+**Server → Individual**: `player:speed_math_result`, `player:fifteen_result`
 
 ## Auth Flow
 

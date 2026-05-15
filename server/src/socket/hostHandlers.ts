@@ -25,6 +25,7 @@ export function registerHostHandlers(
     GameState.QUESTION_ACTIVE,
     GameState.QUESTION_REVEAL,
     GameState.SPEED_MATH_ACTIVE,
+    GameState.FIFTEEN_ACTIVE,
     GameState.FINALE_QUESTION,
     GameState.FINALE_REVEAL,
     GameState.ROUND_RESULTS,
@@ -58,7 +59,11 @@ export function registerHostHandlers(
 
     if (state === GameState.QUESTION_COUNTDOWN) {
       durationMs = 3000; // 3 second countdown
-    } else if (state === GameState.SPEED_MATH_ACTIVE || state === GameState.QUESTION_ACTIVE) {
+    } else if (
+      state === GameState.SPEED_MATH_ACTIVE ||
+      state === GameState.FIFTEEN_ACTIVE ||
+      state === GameState.QUESTION_ACTIVE
+    ) {
       durationMs = engine.getCurrentRoundConfig().timerSeconds * 1000;
     } else if (state === GameState.FINALE_QUESTION) {
       durationMs = (engine.getFullState().config.finale?.timerSeconds ?? 30) * 1000;
@@ -76,7 +81,8 @@ export function registerHostHandlers(
         const prevState = engine.getGameState();
         const willScore =
           prevState === GameState.QUESTION_ACTIVE ||
-          prevState === GameState.SPEED_MATH_ACTIVE;
+          prevState === GameState.SPEED_MATH_ACTIVE ||
+          prevState === GameState.FIFTEEN_ACTIVE;
         const previousLeaderboard = willScore ? engine.getLeaderboard() : null;
 
         engine.endTimer();
@@ -91,6 +97,7 @@ export function registerHostHandlers(
         if (
           newState === GameState.QUESTION_ACTIVE ||
           newState === GameState.SPEED_MATH_ACTIVE ||
+          newState === GameState.FIFTEEN_ACTIVE ||
           newState === GameState.FINALE_QUESTION
         ) {
           startTimerForState();
@@ -112,6 +119,7 @@ export function registerHostHandlers(
       newState === GameState.QUESTION_COUNTDOWN ||
       newState === GameState.QUESTION_ACTIVE ||
       newState === GameState.SPEED_MATH_ACTIVE ||
+      newState === GameState.FIFTEEN_ACTIVE ||
       newState === GameState.FINALE_QUESTION
     ) {
       startTimerForState();
@@ -193,6 +201,21 @@ export function registerHostHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('host:end_game error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:end_fifteen_round', (_data, callback) => {
+    try {
+      assertHost();
+      if (engine.getGameState() !== GameState.FIFTEEN_ACTIVE) {
+        throw new Error('Fifteen round is not active');
+      }
+      timer.forceExpire();
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:end_fifteen_round error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

@@ -8,6 +8,7 @@ export enum GameState {
   QUESTION_REVEAL = 'QUESTION_REVEAL',
   ROUND_RESULTS = 'ROUND_RESULTS',
   SPEED_MATH_ACTIVE = 'SPEED_MATH_ACTIVE',
+  FIFTEEN_ACTIVE = 'FIFTEEN_ACTIVE',
   FINALE_INTRO = 'FINALE_INTRO',
   FINALE_QUESTION = 'FINALE_QUESTION',
   FINALE_REVEAL = 'FINALE_REVEAL',
@@ -16,7 +17,7 @@ export enum GameState {
 
 // ─── Round & Answer Types ─────────────────────────────────────────────────────
 
-export type RoundType = 'speed_math' | 'pattern' | 'visual_spatial' | 'mixed_logic_fermi';
+export type RoundType = 'speed_math' | 'fifteen' | 'pattern' | 'visual_spatial' | 'mixed_logic_fermi';
 export type AnswerType = 'exact_number' | 'multiple_choice' | 'fermi' | 'text';
 export type DisplayType = 'image' | 'generated';
 
@@ -40,6 +41,11 @@ export interface SpeedMathGeneratorParams {
   maxOperandMulDiv: number;
   maxAnswer: number;
   allowNegativeResults: boolean;
+}
+
+export interface FifteenParams {
+  winnerCount: number;
+  scrambleMoves?: number;
 }
 
 export interface QuestionDisplay {
@@ -76,6 +82,7 @@ export interface RoundConfig {
   speedBonusMax: number;
   questions?: QuestionConfig[];
   generatorParams?: SpeedMathGeneratorParams;
+  fifteenParams?: FifteenParams;
   categorySource?: CategorySource;
 }
 
@@ -126,6 +133,14 @@ export interface SpeedMathPlayerState {
   attempts: Map<number, number>; // questionIndex → number of attempts
 }
 
+// ─── Fifteen Player State ───────────────────────────────────────────────────
+
+export interface FifteenPlayerState {
+  completedAt: number | null;
+  moveCount: number | null;
+  rank: number | null;
+}
+
 // ─── Round State ──────────────────────────────────────────────────────────────
 
 export interface RoundState {
@@ -133,6 +148,10 @@ export interface RoundState {
   submissions: Map<string, PlayerSubmission[]>;
   /** playerId → SpeedMathPlayerState (only used in speed_math rounds) */
   speedMathStates: Map<string, SpeedMathPlayerState>;
+  /** Shared starting board for a fifteen round. 0 represents the empty space. */
+  fifteenInitialBoard: number[] | null;
+  /** playerId → FifteenPlayerState (only used in fifteen rounds) */
+  fifteenStates: Map<string, FifteenPlayerState>;
 }
 
 // ─── Finale State ─────────────────────────────────────────────────────────────

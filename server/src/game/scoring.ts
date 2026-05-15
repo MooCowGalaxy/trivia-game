@@ -1,4 +1,4 @@
-import type { PlayerSubmission, SpeedMathPlayerState } from './types.js';
+import type { FifteenPlayerState, PlayerSubmission, SpeedMathPlayerState } from './types.js';
 
 // ─── Standard Round Scoring ──────────────────────────────────────────────────
 //
@@ -80,6 +80,44 @@ export function scoreSpeedMathRound(
         : Math.floor(speedBonusMax * (1 - i / totalCompleters));
     const current = scores.get(playerId) ?? 0;
     scores.set(playerId, current + speedBonus);
+  }
+
+  return scores;
+}
+
+// ─── Fifteen Scoring ─────────────────────────────────────────────────────────
+//
+// Only verified solvers are eligible. The first N solvers are ranked by
+// completion time and receive base points plus the standard rank speed bonus.
+
+export function scoreFifteenRound(
+  playerStates: Map<string, FifteenPlayerState>,
+  basePoints: number,
+  speedBonusMax: number,
+  winnerCount: number,
+): Map<string, number> {
+  const scores = new Map<string, number>();
+  const winners = Array.from(playerStates.entries())
+    .filter(([, state]) => state.completedAt !== null && state.rank !== null)
+    .sort((a, b) => {
+      const rankA = a[1].rank ?? Number.MAX_SAFE_INTEGER;
+      const rankB = b[1].rank ?? Number.MAX_SAFE_INTEGER;
+      return rankA - rankB;
+    })
+    .slice(0, winnerCount);
+
+  for (const [playerId] of playerStates) {
+    scores.set(playerId, 0);
+  }
+
+  const totalWinners = winners.length;
+  for (let i = 0; i < winners.length; i++) {
+    const [playerId] = winners[i]!;
+    const speedBonus =
+      totalWinners === 1
+        ? speedBonusMax
+        : Math.floor(speedBonusMax * (1 - i / totalWinners));
+    scores.set(playerId, basePoints + speedBonus);
   }
 
   return scores;

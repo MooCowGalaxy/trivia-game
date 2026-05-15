@@ -9,7 +9,6 @@ import type {
   PlayerSubmission,
   RoundConfig,
   RoundState,
-  SpeedMathPlayerState,
   QuestionConfig,
   FinaleState,
   LeaderboardEntry,
@@ -18,9 +17,15 @@ import type {
 import {
   scoreStandardRound,
   scoreSpeedMathRound,
+  scoreFifteenRound,
   scoreFermiQuestion,
   checkFinaleAnswer,
 } from './scoring.js';
+import {
+  decodePackedFifteenMoves,
+  generateFifteenBoard,
+  verifyFifteenSolve,
+} from './fifteen.js';
 
 // ─── Broadcast base type (shared state computed once per broadcast) ──────────
 
@@ -44,6 +49,13 @@ export interface BroadcastBase {
     description?: string;
     typeLabel?: string;
     timerSeconds: number;
+  } | null;
+  fifteenState: {
+    initialBoard: number[];
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
   } | null;
   currentQuestion: {
     id: string;
@@ -73,6 +85,8 @@ function freshRoundState(): RoundState {
   return {
     submissions: new Map(),
     speedMathStates: new Map(),
+    fifteenInitialBoard: null,
+    fifteenStates: new Map(),
   };
 }
 
@@ -145,6 +159,13 @@ export class GameEngine {
         completedAt: null,
         attempts: new Map(),
       });
+    } else if (this.state.currentState === GameState.FIFTEEN_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.fifteenStates.set(id, {
+        completedAt: null,
+        moveCount: null,
+        rank: null,
+      });
     }
 
     return player;
@@ -199,6 +220,10 @@ export class GameEngine {
           this.initSpeedMathStates();
           this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
           this.setState(GameState.SPEED_MATH_ACTIVE);
+        } else if (this.getCurrentRoundConfig().type === 'fifteen') {
+          this.initFifteenRound();
+          this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
+          this.setState(GameState.FIFTEEN_ACTIVE);
         } else {
           // Go to countdown first, then QUESTION_ACTIVE after countdown expires
           this.startTimer(3000); // 3 second countdown
@@ -400,6 +425,113 @@ export class GameEngine {
     return { correct: false, nextIndex: questionIndex, completed: false };
   }
 
+  // ── Solve Submission (Fifteen) ─────────────────────────────────────────
+
+  submitFifteenSolve(
+    playerId: string,
+    movesBase64: string,
+    moveCount: number,
+  ): { accepted: boolean; reason?: string; completedCount: number; winnerCount: number } {
+    if (this.state.currentState !== GameState.FIFTEEN_ACTIVE) {
+      return {
+        accepted: false,
+        reason: 'Fifteen is not active',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    if (!this.state.players.has(playerId)) {
+      return {
+        accepted: false,
+        reason: 'Unknown player',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    if (this.isTimerExpired()) {
+      return {
+        accepted: false,
+        reason: 'Timer has expired',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    if (moveCount > 8192) {
+      return {
+        accepted: false,
+        reason: 'Too many moves',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const playerState = roundState.fifteenStates.get(playerId);
+    if (!playerState) {
+      return {
+        accepted: false,
+        reason: 'Player not found in Fifteen state',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    if (playerState.completedAt !== null) {
+      return {
+        accepted: false,
+        reason: 'Player already completed the puzzle',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    const initialBoard = roundState.fifteenInitialBoard;
+    if (!initialBoard) {
+      return {
+        accepted: false,
+        reason: 'No Fifteen board for this round',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    let moves: number[];
+    try {
+      moves = decodePackedFifteenMoves(movesBase64, moveCount);
+    } catch (err) {
+      return {
+        accepted: false,
+        reason: err instanceof Error ? err.message : String(err),
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    const verification = verifyFifteenSolve(initialBoard, moves);
+    if (!verification.valid) {
+      return {
+        accepted: false,
+        reason: verification.reason ?? 'Invalid solve',
+        completedCount: this.getFifteenCompletedCount(),
+        winnerCount: this.getFifteenWinnerCount(),
+      };
+    }
+
+    const rank = this.getFifteenCompletedCount() + 1;
+    playerState.completedAt = Date.now();
+    playerState.moveCount = moveCount;
+    playerState.rank = rank;
+
+    return {
+      accepted: true,
+      completedCount: this.getFifteenCompletedCount(),
+      winnerCount: this.getFifteenWinnerCount(),
+    };
+  }
+
   // ── Timer Expiry ───────────────────────────────────────────────────────
 
   endTimer(): void {
@@ -422,6 +554,11 @@ export class GameEngine {
 
       case GameState.SPEED_MATH_ACTIVE:
         this.scoreSpeedMathRound(timerStartedAt, timerDurationMs);
+        this.setState(GameState.ROUND_RESULTS);
+        break;
+
+      case GameState.FIFTEEN_ACTIVE:
+        this.scoreFifteenRound(timerStartedAt, timerDurationMs);
         this.setState(GameState.ROUND_RESULTS);
         break;
 
@@ -498,6 +635,31 @@ export class GameEngine {
     // Track response times for tiebreaker
     if (timerStartedAt !== null) {
       for (const [playerId, playerState] of roundState.speedMathStates) {
+        const responseTime = playerState.completedAt !== null
+          ? playerState.completedAt - timerStartedAt
+          : (timerDurationMs ?? 0);
+        const current = this.state.totalResponseTimeMs.get(playerId) ?? 0;
+        this.state.totalResponseTimeMs.set(playerId, current + responseTime);
+      }
+    }
+  }
+
+  private scoreFifteenRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const winnerCount = this.getFifteenWinnerCount();
+
+    const questionScores = scoreFifteenRound(
+      roundState.fifteenStates,
+      round.basePoints,
+      round.speedBonusMax,
+      winnerCount,
+    );
+
+    this.applyScores(questionScores, this.getFifteenRoundId());
+
+    if (timerStartedAt !== null) {
+      for (const [playerId, playerState] of roundState.fifteenStates) {
         const responseTime = playerState.completedAt !== null
           ? playerState.completedAt - timerStartedAt
           : (timerDurationMs ?? 0);
@@ -599,7 +761,7 @@ export class GameEngine {
         ) {
           // Current round is fully complete
           completed += roundMax;
-        } else if (round.type !== 'speed_math') {
+        } else if (!this.isAtomicRound(round)) {
           // Standard round: count questions before the current one
           const questionMax = round.basePoints + round.speedBonusMax;
           completed += this.state.currentQuestionIndex * questionMax;
@@ -612,11 +774,15 @@ export class GameEngine {
   }
 
   private getRoundTheoreticalMax(round: RoundConfig): number {
-    if (round.type === 'speed_math') {
+    if (this.isAtomicRound(round)) {
       return round.basePoints + round.speedBonusMax;
     }
     const questionCount = round.questions?.length ?? 0;
     return questionCount * (round.basePoints + round.speedBonusMax);
+  }
+
+  private isAtomicRound(round: RoundConfig): boolean {
+    return round.type === 'speed_math' || round.type === 'fifteen';
   }
 
   getLeaderboard(): LeaderboardEntry[] {
@@ -677,6 +843,35 @@ export class GameEngine {
     return true;
   }
 
+  getFifteenCompletedCount(): number {
+    const roundState = this.getCurrentRoundState();
+    return Array.from(roundState.fifteenStates.values()).filter((state) => state.completedAt !== null).length;
+  }
+
+  getFifteenWinnerCount(): number {
+    const round = this.getCurrentRoundConfig();
+    return round.fifteenParams?.winnerCount ?? 1;
+  }
+
+  shouldEndFifteenRound(): boolean {
+    return (
+      this.state.currentState === GameState.FIFTEEN_ACTIVE &&
+      this.getFifteenCompletedCount() >= this.getFifteenWinnerCount()
+    );
+  }
+
+  getFifteenProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
+    const hostId = this.state.config.settings.hostDiscordId;
+    const totalPlayers = Array.from(this.state.players.entries())
+      .filter(([id, player]) => id !== hostId && player.connected)
+      .length;
+    return {
+      completedCount: this.getFifteenCompletedCount(),
+      winnerCount: this.getFifteenWinnerCount(),
+      totalPlayers,
+    };
+  }
+
   getPlayers(): Map<string, Player> {
     return this.state.players;
   }
@@ -719,6 +914,13 @@ export class GameEngine {
       typeLabel?: string;
       timerSeconds: number;
     } | null;
+    fifteenState: {
+      initialBoard: number[];
+      completed: boolean;
+      completedCount: number;
+      winnerCount: number;
+      totalPlayers: number;
+    } | null;
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -760,6 +962,7 @@ export class GameEngine {
             timerSeconds: round.timerSeconds,
           }
         : null,
+      fifteenState: this.getPublicFifteenState(null),
       currentQuestion: question,
       timerRemainingMs: this.getTimerRemainingMs(),
       progressBar: this.getProgressBar(),
@@ -828,7 +1031,7 @@ export class GameEngine {
       }
     }
 
-    if (st === GameState.SPEED_MATH_ACTIVE) {
+    if (st === GameState.SPEED_MATH_ACTIVE || st === GameState.FIFTEEN_ACTIVE) {
       questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
     }
 
@@ -867,6 +1070,7 @@ export class GameEngine {
       totalQuestions: number;
       completed: boolean;
     } | null = null;
+    let fifteenState = broadcastBase.fifteenState;
 
     const isQuestionActive = st === GameState.QUESTION_ACTIVE;
     const isQuestionReveal = st === GameState.QUESTION_REVEAL;
@@ -936,6 +1140,10 @@ export class GameEngine {
       };
     }
 
+    if (st === GameState.FIFTEEN_ACTIVE) {
+      fifteenState = this.getPublicFifteenState(playerId);
+    }
+
     // Round results points
     if (st === GameState.ROUND_RESULTS && playerId) {
       const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
@@ -958,6 +1166,11 @@ export class GameEngine {
             base: accuracyBase,
             speedBonus: Math.max(0, total - accuracyBase),
           };
+        } else if (roundConfig.type === 'fifteen') {
+          roundPointsBreakdown = {
+            base: Math.min(total, roundConfig.basePoints),
+            speedBonus: Math.max(0, total - roundConfig.basePoints),
+          };
         } else {
           roundPointsBreakdown = { base: total, speedBonus: 0 };
         }
@@ -970,6 +1183,7 @@ export class GameEngine {
       roundPointsEarned,
       roundPointsBreakdown,
       speedMathState,
+      fifteenState,
     };
   }
 
@@ -1004,6 +1218,13 @@ export class GameEngine {
       description?: string;
       typeLabel?: string;
       timerSeconds: number;
+    } | null;
+    fifteenState: {
+      initialBoard: number[];
+      completed: boolean;
+      completedCount: number;
+      winnerCount: number;
+      totalPlayers: number;
     } | null;
     currentQuestion: {
       id: string;
@@ -1092,6 +1313,53 @@ export class GameEngine {
         attempts: new Map(),
       });
     }
+  }
+
+  private initFifteenRound(): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const scrambleMoves = round.fifteenParams?.scrambleMoves ?? 120;
+    roundState.fifteenInitialBoard = generateFifteenBoard(scrambleMoves);
+
+    for (const [playerId] of this.state.players) {
+      roundState.fifteenStates.set(playerId, {
+        completedAt: null,
+        moveCount: null,
+        rank: null,
+      });
+    }
+  }
+
+  private getPublicFifteenState(playerId: string | null): {
+    initialBoard: number[];
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+  } | null {
+    if (this.state.currentState !== GameState.FIFTEEN_ACTIVE) {
+      return null;
+    }
+
+    const roundState = this.getCurrentRoundState();
+    if (!roundState.fifteenInitialBoard) {
+      return null;
+    }
+
+    const playerState = playerId ? roundState.fifteenStates.get(playerId) : null;
+    const progress = this.getFifteenProgress();
+
+    return {
+      initialBoard: roundState.fifteenInitialBoard,
+      completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
+      completedCount: progress.completedCount,
+      winnerCount: progress.winnerCount,
+      totalPlayers: progress.totalPlayers,
+    };
+  }
+
+  private getFifteenRoundId(): string {
+    return `fifteen_round_${this.state.currentRoundIndex}`;
   }
 
   private startTimer(durationMs: number): void {

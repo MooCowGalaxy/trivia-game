@@ -1,0 +1,23 @@
+{
+  "gameId": "fifteen",
+  "settings": {
+    "hostDiscordId": "594239049884237836",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 1,
+      "type": "fifteen",
+      "title": "Fifteen",
+      "description": "Slide the tiles into order as fast as you can.",
+      "timerSeconds": 1800,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "fifteenParams": {
+        "winnerCount": 1,
+        "scrambleMoves": 500
+      }
+    }
+  ]
+}

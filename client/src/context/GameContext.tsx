@@ -16,6 +16,7 @@ export type GameStateName =
   | "QUESTION_REVEAL"
   | "ROUND_RESULTS"
   | "SPEED_MATH_ACTIVE"
+  | "FIFTEEN_ACTIVE"
   | "FINALE_INTRO"
   | "FINALE_QUESTION"
   | "FINALE_REVEAL"
@@ -66,6 +67,14 @@ export interface SpeedMathState {
   completed: boolean
 }
 
+export interface FifteenState {
+  initialBoard: number[]
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
 export interface PublicGameState {
   gameId: string
   hostDiscordId: string
@@ -90,6 +99,7 @@ export interface PublicGameState {
   roundPointsEarned: number | null
   roundPointsBreakdown: { base: number; speedBonus: number } | null
   speedMathState: SpeedMathState | null
+  fifteenState: FifteenState | null
 }
 
 export interface SubmissionCount {
@@ -111,6 +121,19 @@ export interface SpeedMathResult {
   completed: boolean
 }
 
+export interface FifteenProgress {
+  playerId: string
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export interface FifteenResult {
+  completed: boolean
+  reason?: string
+}
+
 export interface LeaderboardUpdate {
   previous: LeaderboardEntry[]
   current: LeaderboardEntry[]
@@ -123,6 +146,8 @@ export interface GameContextValue {
   submissionCount: SubmissionCount | null
   speedMathProgress: Record<string, SpeedMathProgressEntry>
   speedMathResult: SpeedMathResult | null
+  fifteenProgress: FifteenProgress | null
+  fifteenResult: FifteenResult | null
   timerRemainingMs: number | null
   leaderboard: LeaderboardEntry[]
   leaderboardUpdate: LeaderboardUpdate | null
@@ -141,6 +166,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
   >({})
   const [speedMathResult, setSpeedMathResult] =
     useState<SpeedMathResult | null>(null)
+  const [fifteenProgress, setFifteenProgress] =
+    useState<FifteenProgress | null>(null)
+  const [fifteenResult, setFifteenResult] =
+    useState<FifteenResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
@@ -156,6 +185,18 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
         // Reset submission count when question changes
         if (prev?.currentQuestion?.id !== state.currentQuestion?.id) {
           setSubmissionCount(null)
+        }
+        if (state.fifteenState) {
+          setFifteenProgress({
+            playerId: "",
+            completed: state.fifteenState.completed,
+            completedCount: state.fifteenState.completedCount,
+            winnerCount: state.fifteenState.winnerCount,
+            totalPlayers: state.fifteenState.totalPlayers,
+          })
+        } else {
+          setFifteenProgress(null)
+          setFifteenResult(null)
         }
         // Clear leaderboard update when leaving reveal/results states
         // (so reconnecting users don't see stale animation data)
@@ -197,6 +238,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       }
     )
 
+    socket.on("game:fifteen_progress", (data: FifteenProgress) => {
+      setFifteenProgress(data)
+    })
+
     socket.on("game:leaderboard_update", (data: LeaderboardUpdate) => {
       setLeaderboard(data.current)
       setLeaderboardUpdate(data)
@@ -213,6 +258,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
 
     socket.on("player:speed_math_result", (data: SpeedMathResult) => {
       setSpeedMathResult(data)
+    })
+
+    socket.on("player:fifteen_result", (data: FifteenResult) => {
+      setFifteenResult(data)
     })
 
     socket.on("connect", () => {
@@ -246,9 +295,11 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("game:timer_sync")
       socket.off("game:submission_count")
       socket.off("game:speed_math_progress")
+      socket.off("game:fifteen_progress")
       socket.off("game:leaderboard_update")
       socket.off("game:players_sync")
       socket.off("player:speed_math_result")
+      socket.off("player:fifteen_result")
       socket.disconnect()
     }
   }, [authenticated])
@@ -258,6 +309,8 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     submissionCount,
     speedMathProgress,
     speedMathResult,
+    fifteenProgress,
+    fifteenResult,
     timerRemainingMs,
     leaderboard,
     leaderboardUpdate,

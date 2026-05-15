@@ -35,10 +35,15 @@ const SpeedMathGeneratorParamsSchema = z.object({
   allowNegativeResults: z.boolean(),
 });
 
+const FifteenParamsSchema = z.object({
+  winnerCount: z.number().int().positive(),
+  scrambleMoves: z.number().int().positive().optional(),
+});
+
 const RoundConfigSchema = z
   .object({
     roundNumber: z.number().int().positive(),
-    type: z.enum(['speed_math', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
+    type: z.enum(['speed_math', 'fifteen', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
     title: z.string(),
     description: z.string().optional(),
     typeLabel: z.string().optional(),
@@ -47,6 +52,7 @@ const RoundConfigSchema = z
     speedBonusMax: z.number().nonnegative(),
     questions: z.array(QuestionConfigSchema).optional(),
     generatorParams: SpeedMathGeneratorParamsSchema.optional(),
+    fifteenParams: FifteenParamsSchema.optional(),
     categorySource: CategorySourceSchema.optional(),
   })
   .superRefine((round, ctx) => {
@@ -56,6 +62,14 @@ const RoundConfigSchema = z
           code: z.ZodIssueCode.custom,
           message: `Round ${round.roundNumber} (speed_math) requires generatorParams`,
           path: ['generatorParams'],
+        });
+      }
+    } else if (round.type === 'fifteen') {
+      if (!round.fifteenParams) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (fifteen) requires fifteenParams`,
+          path: ['fifteenParams'],
         });
       }
     } else {

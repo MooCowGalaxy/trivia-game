@@ -7,7 +7,7 @@ import { HostDashboard } from "@/host/HostDashboard"
 type AckResponse = { ok: boolean; error?: string }
 
 export function HostControls() {
-  const { gameState, submissionCount } = useGameState()
+  const { gameState, submissionCount, fifteenProgress } = useGameState()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -83,6 +83,26 @@ export function HostControls() {
 
       {state === "SPEED_MATH_ACTIVE" && <HostDashboard />}
 
+      {state === "FIFTEEN_ACTIVE" && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground text-center py-2">
+            {formatSolvedCount(
+              fifteenProgress?.completedCount ??
+                gameState.fifteenState?.completedCount ??
+                0
+            )}
+          </p>
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={loading}
+            onClick={() => emitAction("host:end_fifteen_round")}
+          >
+            End Round
+          </Button>
+        </div>
+      )}
+
       {state === "FINALE_INTRO" && (
         <Button
           className="w-full"
@@ -132,4 +152,10 @@ export function HostControls() {
       )}
     </div>
   )
+}
+
+function formatSolvedCount(count: number): string {
+  return count === 1
+    ? "1 player has solved the puzzle"
+    : `${count} players have solved the puzzle`
 }

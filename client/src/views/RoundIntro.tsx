@@ -1,5 +1,6 @@
 import { useContext } from "react"
 import { Badge } from "@/components/ui/badge"
+import { FifteenGoalBoard } from "@/components/FifteenGoalBoard"
 import { GameContext } from "@/context/GameContext"
 
 const ROUND_TYPE_LABELS: Record<string, string> = {
@@ -8,6 +9,7 @@ const ROUND_TYPE_LABELS: Record<string, string> = {
   fermi: "Fermi Estimation",
   text: "Text Answer",
   speed_math: "Speed Math",
+  fifteen: "Fifteen",
   pattern: "Multiple Choice",
   image: "Image Round",
 }
@@ -19,6 +21,7 @@ export function RoundIntro() {
   if (!round) return null
 
   const typeLabel = round.typeLabel ?? ROUND_TYPE_LABELS[round.type] ?? round.type
+  const isFifteen = round.type === "fifteen"
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -40,6 +43,22 @@ export function RoundIntro() {
           <p className="text-muted-foreground text-lg max-w-md mx-auto animate-in fade-in slide-in-from-bottom-6 duration-1000">
             {round.description}
           </p>
+        )}
+
+        {isFifteen && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <FifteenGoalBoard animated />
+            <div className="mx-auto max-w-lg space-y-2 text-muted-foreground">
+              <p className="text-base">
+                Arrange the tiles in reading order from 1 through 15, with the
+                empty space in the bottom-right corner.
+              </p>
+              <p className="text-sm">
+                Click or tap any tile directly above, below, left, or right of
+                the empty space to slide that tile into the empty space.
+              </p>
+            </div>
+          </div>
         )}
 
         <p

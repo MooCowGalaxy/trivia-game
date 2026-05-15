@@ -70,6 +70,25 @@ function scheduleSpeedMathProgressBroadcast(ioRef: Server, engineRef: GameEngine
   }, broadcastDebounceMs);
 }
 
+let fifteenProgressTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingFifteenProgress: { io: Server; engine: GameEngine; playerId: string; completed: boolean } | null = null;
+
+function scheduleFifteenProgressBroadcast(ioRef: Server, engineRef: GameEngine, pid: string, completed: boolean): void {
+  pendingFifteenProgress = { io: ioRef, engine: engineRef, playerId: pid, completed };
+  if (fifteenProgressTimer) return;
+  fifteenProgressTimer = setTimeout(() => {
+    fifteenProgressTimer = null;
+    if (!pendingFifteenProgress) return;
+    const { io: sio, engine: eng, playerId: id, completed: comp } = pendingFifteenProgress;
+    pendingFifteenProgress = null;
+    sio.emit('game:fifteen_progress', {
+      playerId: id,
+      completed: comp,
+      ...eng.getFifteenProgress(),
+    });
+  }, broadcastDebounceMs);
+}
+
 export function registerPlayerHandlers(
   socket: Socket,
   io: Server,
@@ -84,6 +103,7 @@ export function registerPlayerHandlers(
   // Rate limiters: per socket, per event type
   const answerLimit = createRateLimiter(10, 5000);       // 10 answers per 5s
   const speedMathLimit = createRateLimiter(30, 5000);    // 30 speed math answers per 5s
+  const fifteenLimit = createRateLimiter(5, 5000);       // 5 solve submissions per 5s
   const joinLimit = createRateLimiter(3, 5000);         // 3 join/spectate per 5s
 
   // ── Answer submission ─────────────────────────────────────────────────────
@@ -154,6 +174,42 @@ export function registerPlayerHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('player:speed_math_answer error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  // ── Fifteen solve submission ──────────────────────────────────────────────
+
+  socket.on('player:fifteen_solve', (data: { moves: string; moveCount: number }, callback) => {
+    try {
+      if (!fifteenLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const result = engine.submitFifteenSolve(playerId, data.moves, data.moveCount);
+
+      socket.emit('player:fifteen_result', {
+        completed: result.accepted,
+        reason: result.reason,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ ok: result.accepted, reason: result.reason });
+      }
+
+      if (result.accepted) {
+        const base = engine.computeBroadcastBase(getQuestionImageData);
+        socket.emit('game:state_change', engine.getPlayerOverlay(playerId, base));
+        scheduleFifteenProgressBroadcast(io, engine, playerId, true);
+
+        if (engine.shouldEndFifteenRound()) {
+          timer.forceExpire();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:fifteen_solve error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });
