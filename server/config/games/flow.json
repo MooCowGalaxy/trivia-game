@@ -1,0 +1,54 @@
+{
+  "gameId": "flow",
+  "settings": {
+    "hostDiscordId": "594239049884237836",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 1,
+      "type": "flow_connect",
+      "title": "Flow Connect",
+      "description": "Connect matching dots and fill the whole board.",
+      "timerSeconds": 30,
+      "basePoints": 250,
+      "speedBonusMax": 125,
+      "flowConnectParams": {
+        "boardSize": 5,
+        "colorCount": 4,
+        "winnerCount": 0
+      }
+    },
+
+    {
+      "roundNumber": 2,
+      "type": "flow_connect",
+      "title": "Flow Connect",
+      "description": "Connect matching dots and fill the whole board.",
+      "timerSeconds": 45,
+      "basePoints": 500,
+      "speedBonusMax": 250,
+      "flowConnectParams": {
+        "boardSize": 6,
+        "colorCount": 6,
+        "winnerCount": 0
+      }
+    },
+
+    {
+      "roundNumber": 3,
+      "type": "flow_connect",
+      "title": "Flow Connect",
+      "description": "Connect matching dots and fill the whole board.",
+      "timerSeconds": 60,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "flowConnectParams": {
+        "boardSize": 8,
+        "colorCount": 7,
+        "winnerCount": 0
+      }
+    }
+  ]
+}

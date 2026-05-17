@@ -5,6 +5,7 @@ import type {
   GameConfig,
   GameEngineState,
   GeneratedQuestion,
+  FlowConnectRoundState,
   Player,
   PlayerSubmission,
   RoundConfig,
@@ -18,14 +19,20 @@ import {
   scoreStandardRound,
   scoreSpeedMathRound,
   scoreFifteenRound,
+  scoreFlowConnectRound,
   scoreFermiQuestion,
   checkFinaleAnswer,
 } from './scoring.js';
 import {
   decodePackedFifteenMoves,
-  generateFifteenBoard,
   verifyFifteenSolve,
 } from './fifteen.js';
+import {
+  verifyFlowConnectSolution,
+} from './flowConnect.js';
+import type {
+  FlowConnectSubmittedPath,
+} from './flowConnect.js';
 
 // ─── Broadcast base type (shared state computed once per broadcast) ──────────
 
@@ -52,6 +59,19 @@ export interface BroadcastBase {
   } | null;
   fifteenState: {
     initialBoard: number[];
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+  } | null;
+  flowConnectState: {
+    size: number;
+    colorCount: number;
+    endpoints: Array<{
+      color: number;
+      start: { row: number; col: number };
+      end: { row: number; col: number };
+    }>;
     completed: boolean;
     completedCount: number;
     winnerCount: number;
@@ -87,6 +107,8 @@ function freshRoundState(): RoundState {
     speedMathStates: new Map(),
     fifteenInitialBoard: null,
     fifteenStates: new Map(),
+    flowConnectPuzzle: null,
+    flowConnectStates: new Map(),
   };
 }
 
@@ -100,6 +122,19 @@ function freshFinaleState(finalistIds: string[] = []): FinaleState {
   };
 }
 
+function cloneFlowConnectPuzzle(puzzle: FlowConnectRoundState): FlowConnectRoundState {
+  return {
+    size: puzzle.size,
+    colorCount: puzzle.colorCount,
+    solvedGrid: puzzle.solvedGrid.map((row) => [...row]),
+    endpoints: puzzle.endpoints.map((endpoint) => ({
+      color: endpoint.color,
+      start: { ...endpoint.start },
+      end: { ...endpoint.end },
+    })),
+  };
+}
+
 // ─── Game Engine ─────────────────────────────────────────────────────────────
 
 export class GameEngine {
@@ -108,6 +143,8 @@ export class GameEngine {
   constructor(
     config: GameConfig,
     generatedQuestions?: Map<number, GeneratedQuestion[]>,
+    generatedFifteenBoards?: Map<number, number[]>,
+    generatedFlowConnectPuzzles?: Map<number, FlowConnectRoundState>,
   ) {
     this.state = {
       gameId: config.gameId,
@@ -123,6 +160,8 @@ export class GameEngine {
       timerDurationMs: null,
       roundScores: new Map(),
       generatedQuestions: generatedQuestions ?? new Map(),
+      generatedFifteenBoards: generatedFifteenBoards ?? new Map(),
+      generatedFlowConnectPuzzles: generatedFlowConnectPuzzles ?? new Map(),
       totalResponseTimeMs: new Map(),
     };
   }
@@ -164,6 +203,12 @@ export class GameEngine {
       roundState.fifteenStates.set(id, {
         completedAt: null,
         moveCount: null,
+        rank: null,
+      });
+    } else if (this.state.currentState === GameState.FLOW_CONNECT_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.flowConnectStates.set(id, {
+        completedAt: null,
         rank: null,
       });
     }
@@ -224,6 +269,10 @@ export class GameEngine {
           this.initFifteenRound();
           this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
           this.setState(GameState.FIFTEEN_ACTIVE);
+        } else if (this.getCurrentRoundConfig().type === 'flow_connect') {
+          this.initFlowConnectRound();
+          this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
+          this.setState(GameState.FLOW_CONNECT_ACTIVE);
         } else {
           // Go to countdown first, then QUESTION_ACTIVE after countdown expires
           this.startTimer(3000); // 3 second countdown
@@ -532,6 +581,95 @@ export class GameEngine {
     };
   }
 
+  // ── Solve Submission (Flow Connect) ────────────────────────────────────
+
+  submitFlowConnectSolve(
+    playerId: string,
+    paths: FlowConnectSubmittedPath[],
+  ): { accepted: boolean; reason?: string; completedCount: number; winnerCount: number } {
+    if (this.state.currentState !== GameState.FLOW_CONNECT_ACTIVE) {
+      return {
+        accepted: false,
+        reason: 'Flow Connect is not active',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    if (!this.state.players.has(playerId)) {
+      return {
+        accepted: false,
+        reason: 'Unknown player',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    if (this.isTimerExpired()) {
+      return {
+        accepted: false,
+        reason: 'Timer has expired',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const playerState = roundState.flowConnectStates.get(playerId);
+    if (!playerState) {
+      return {
+        accepted: false,
+        reason: 'Player not found in Flow Connect state',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    if (playerState.completedAt !== null) {
+      return {
+        accepted: false,
+        reason: 'Player already completed the puzzle',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    const puzzle = roundState.flowConnectPuzzle;
+    if (!puzzle) {
+      return {
+        accepted: false,
+        reason: 'No Flow Connect puzzle for this round',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    const verification = verifyFlowConnectSolution(
+      paths,
+      puzzle.endpoints,
+      puzzle.size,
+      puzzle.colorCount,
+    );
+    if (!verification.valid) {
+      return {
+        accepted: false,
+        reason: verification.reason ?? 'Invalid solve',
+        completedCount: this.getFlowConnectCompletedCount(),
+        winnerCount: this.getFlowConnectWinnerCount(),
+      };
+    }
+
+    const rank = this.getFlowConnectCompletedCount() + 1;
+    playerState.completedAt = Date.now();
+    playerState.rank = rank;
+
+    return {
+      accepted: true,
+      completedCount: this.getFlowConnectCompletedCount(),
+      winnerCount: this.getFlowConnectWinnerCount(),
+    };
+  }
+
   // ── Timer Expiry ───────────────────────────────────────────────────────
 
   endTimer(): void {
@@ -559,6 +697,11 @@ export class GameEngine {
 
       case GameState.FIFTEEN_ACTIVE:
         this.scoreFifteenRound(timerStartedAt, timerDurationMs);
+        this.setState(GameState.ROUND_RESULTS);
+        break;
+
+      case GameState.FLOW_CONNECT_ACTIVE:
+        this.scoreFlowConnectRound(timerStartedAt, timerDurationMs);
         this.setState(GameState.ROUND_RESULTS);
         break;
 
@@ -660,6 +803,31 @@ export class GameEngine {
 
     if (timerStartedAt !== null) {
       for (const [playerId, playerState] of roundState.fifteenStates) {
+        const responseTime = playerState.completedAt !== null
+          ? playerState.completedAt - timerStartedAt
+          : (timerDurationMs ?? 0);
+        const current = this.state.totalResponseTimeMs.get(playerId) ?? 0;
+        this.state.totalResponseTimeMs.set(playerId, current + responseTime);
+      }
+    }
+  }
+
+  private scoreFlowConnectRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const winnerCount = this.getFlowConnectWinnerCount();
+
+    const questionScores = scoreFlowConnectRound(
+      roundState.flowConnectStates,
+      round.basePoints,
+      round.speedBonusMax,
+      winnerCount,
+    );
+
+    this.applyScores(questionScores, this.getFlowConnectRoundId());
+
+    if (timerStartedAt !== null) {
+      for (const [playerId, playerState] of roundState.flowConnectStates) {
         const responseTime = playerState.completedAt !== null
           ? playerState.completedAt - timerStartedAt
           : (timerDurationMs ?? 0);
@@ -782,7 +950,7 @@ export class GameEngine {
   }
 
   private isAtomicRound(round: RoundConfig): boolean {
-    return round.type === 'speed_math' || round.type === 'fifteen';
+    return round.type === 'speed_math' || round.type === 'fifteen' || round.type === 'flow_connect';
   }
 
   getLeaderboard(): LeaderboardEntry[] {
@@ -845,7 +1013,9 @@ export class GameEngine {
 
   getFifteenCompletedCount(): number {
     const roundState = this.getCurrentRoundState();
-    return Array.from(roundState.fifteenStates.values()).filter((state) => state.completedAt !== null).length;
+    return this.getActiveParticipantIds()
+      .filter((playerId) => roundState.fifteenStates.get(playerId)?.completedAt !== null)
+      .length;
   }
 
   getFifteenWinnerCount(): number {
@@ -854,20 +1024,49 @@ export class GameEngine {
   }
 
   shouldEndFifteenRound(): boolean {
-    return (
-      this.state.currentState === GameState.FIFTEEN_ACTIVE &&
-      this.getFifteenCompletedCount() >= this.getFifteenWinnerCount()
-    );
+    const winnerCount = this.getFifteenWinnerCount();
+    if (this.state.currentState !== GameState.FIFTEEN_ACTIVE) return false;
+    const completedCount = this.getFifteenCompletedCount();
+    if (winnerCount > 0) return completedCount >= winnerCount;
+    const activeParticipants = this.getActiveParticipantIds();
+    return activeParticipants.length > 0 && completedCount >= activeParticipants.length;
   }
 
   getFifteenProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
-    const hostId = this.state.config.settings.hostDiscordId;
-    const totalPlayers = Array.from(this.state.players.entries())
-      .filter(([id, player]) => id !== hostId && player.connected)
-      .length;
+    const totalPlayers = this.getActiveParticipantIds().length;
     return {
       completedCount: this.getFifteenCompletedCount(),
       winnerCount: this.getFifteenWinnerCount(),
+      totalPlayers,
+    };
+  }
+
+  getFlowConnectCompletedCount(): number {
+    const roundState = this.getCurrentRoundState();
+    return this.getActiveParticipantIds()
+      .filter((playerId) => roundState.flowConnectStates.get(playerId)?.completedAt !== null)
+      .length;
+  }
+
+  getFlowConnectWinnerCount(): number {
+    const round = this.getCurrentRoundConfig();
+    return round.flowConnectParams?.winnerCount ?? 1;
+  }
+
+  shouldEndFlowConnectRound(): boolean {
+    const winnerCount = this.getFlowConnectWinnerCount();
+    if (this.state.currentState !== GameState.FLOW_CONNECT_ACTIVE) return false;
+    const completedCount = this.getFlowConnectCompletedCount();
+    if (winnerCount > 0) return completedCount >= winnerCount;
+    const activeParticipants = this.getActiveParticipantIds();
+    return activeParticipants.length > 0 && completedCount >= activeParticipants.length;
+  }
+
+  getFlowConnectProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
+    const totalPlayers = this.getActiveParticipantIds().length;
+    return {
+      completedCount: this.getFlowConnectCompletedCount(),
+      winnerCount: this.getFlowConnectWinnerCount(),
       totalPlayers,
     };
   }
@@ -921,6 +1120,19 @@ export class GameEngine {
       winnerCount: number;
       totalPlayers: number;
     } | null;
+    flowConnectState: {
+      size: number;
+      colorCount: number;
+      endpoints: Array<{
+        color: number;
+        start: { row: number; col: number };
+        end: { row: number; col: number };
+      }>;
+      completed: boolean;
+      completedCount: number;
+      winnerCount: number;
+      totalPlayers: number;
+    } | null;
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -963,6 +1175,7 @@ export class GameEngine {
           }
         : null,
       fifteenState: this.getPublicFifteenState(null),
+      flowConnectState: this.getPublicFlowConnectState(null),
       currentQuestion: question,
       timerRemainingMs: this.getTimerRemainingMs(),
       progressBar: this.getProgressBar(),
@@ -1031,7 +1244,11 @@ export class GameEngine {
       }
     }
 
-    if (st === GameState.SPEED_MATH_ACTIVE || st === GameState.FIFTEEN_ACTIVE) {
+    if (
+      st === GameState.SPEED_MATH_ACTIVE ||
+      st === GameState.FIFTEEN_ACTIVE ||
+      st === GameState.FLOW_CONNECT_ACTIVE
+    ) {
       questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
     }
 
@@ -1071,6 +1288,7 @@ export class GameEngine {
       completed: boolean;
     } | null = null;
     let fifteenState = broadcastBase.fifteenState;
+    let flowConnectState = broadcastBase.flowConnectState;
 
     const isQuestionActive = st === GameState.QUESTION_ACTIVE;
     const isQuestionReveal = st === GameState.QUESTION_REVEAL;
@@ -1144,6 +1362,10 @@ export class GameEngine {
       fifteenState = this.getPublicFifteenState(playerId);
     }
 
+    if (st === GameState.FLOW_CONNECT_ACTIVE) {
+      flowConnectState = this.getPublicFlowConnectState(playerId);
+    }
+
     // Round results points
     if (st === GameState.ROUND_RESULTS && playerId) {
       const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
@@ -1166,7 +1388,7 @@ export class GameEngine {
             base: accuracyBase,
             speedBonus: Math.max(0, total - accuracyBase),
           };
-        } else if (roundConfig.type === 'fifteen') {
+        } else if (roundConfig.type === 'fifteen' || roundConfig.type === 'flow_connect') {
           roundPointsBreakdown = {
             base: Math.min(total, roundConfig.basePoints),
             speedBonus: Math.max(0, total - roundConfig.basePoints),
@@ -1184,6 +1406,7 @@ export class GameEngine {
       roundPointsBreakdown,
       speedMathState,
       fifteenState,
+      flowConnectState,
     };
   }
 
@@ -1221,6 +1444,19 @@ export class GameEngine {
     } | null;
     fifteenState: {
       initialBoard: number[];
+      completed: boolean;
+      completedCount: number;
+      winnerCount: number;
+      totalPlayers: number;
+    } | null;
+    flowConnectState: {
+      size: number;
+      colorCount: number;
+      endpoints: Array<{
+        color: number;
+        start: { row: number; col: number };
+        end: { row: number; col: number };
+      }>;
       completed: boolean;
       completedCount: number;
       winnerCount: number;
@@ -1299,6 +1535,13 @@ export class GameEngine {
     return rs;
   }
 
+  private getActiveParticipantIds(): string[] {
+    const hostId = this.state.config.settings.hostDiscordId;
+    return Array.from(this.state.players.entries())
+      .filter(([id, player]) => id !== hostId && player.connected)
+      .map(([id]) => id);
+  }
+
   private initRoundState(): void {
     this.state.roundStates[this.state.currentRoundIndex] = freshRoundState();
   }
@@ -1316,15 +1559,33 @@ export class GameEngine {
   }
 
   private initFifteenRound(): void {
-    const round = this.getCurrentRoundConfig();
     const roundState = this.getCurrentRoundState();
-    const scrambleMoves = round.fifteenParams?.scrambleMoves ?? 120;
-    roundState.fifteenInitialBoard = generateFifteenBoard(scrambleMoves);
+    const initialBoard = this.state.generatedFifteenBoards.get(this.state.currentRoundIndex);
+    if (!initialBoard) {
+      throw new Error(`No pre-generated Fifteen board for round index ${this.state.currentRoundIndex}`);
+    }
+    roundState.fifteenInitialBoard = [...initialBoard];
 
     for (const [playerId] of this.state.players) {
       roundState.fifteenStates.set(playerId, {
         completedAt: null,
         moveCount: null,
+        rank: null,
+      });
+    }
+  }
+
+  private initFlowConnectRound(): void {
+    const roundState = this.getCurrentRoundState();
+    const puzzle = this.state.generatedFlowConnectPuzzles.get(this.state.currentRoundIndex);
+    if (!puzzle) {
+      throw new Error(`No pre-generated Flow Connect puzzle for round index ${this.state.currentRoundIndex}`);
+    }
+    roundState.flowConnectPuzzle = cloneFlowConnectPuzzle(puzzle);
+
+    for (const [playerId] of this.state.players) {
+      roundState.flowConnectStates.set(playerId, {
+        completedAt: null,
         rank: null,
       });
     }
@@ -1360,6 +1621,47 @@ export class GameEngine {
 
   private getFifteenRoundId(): string {
     return `fifteen_round_${this.state.currentRoundIndex}`;
+  }
+
+  private getPublicFlowConnectState(playerId: string | null): {
+    size: number;
+    colorCount: number;
+    endpoints: Array<{
+      color: number;
+      start: { row: number; col: number };
+      end: { row: number; col: number };
+    }>;
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+  } | null {
+    if (this.state.currentState !== GameState.FLOW_CONNECT_ACTIVE) {
+      return null;
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const puzzle = roundState.flowConnectPuzzle;
+    if (!puzzle) {
+      return null;
+    }
+
+    const playerState = playerId ? roundState.flowConnectStates.get(playerId) : null;
+    const progress = this.getFlowConnectProgress();
+
+    return {
+      size: puzzle.size,
+      colorCount: puzzle.colorCount,
+      endpoints: puzzle.endpoints,
+      completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
+      completedCount: progress.completedCount,
+      winnerCount: progress.winnerCount,
+      totalPlayers: progress.totalPlayers,
+    };
+  }
+
+  private getFlowConnectRoundId(): string {
+    return `flow_connect_round_${this.state.currentRoundIndex}`;
   }
 
   private startTimer(durationMs: number): void {

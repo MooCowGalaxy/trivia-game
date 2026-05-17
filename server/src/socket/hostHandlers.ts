@@ -26,6 +26,7 @@ export function registerHostHandlers(
     GameState.QUESTION_REVEAL,
     GameState.SPEED_MATH_ACTIVE,
     GameState.FIFTEEN_ACTIVE,
+    GameState.FLOW_CONNECT_ACTIVE,
     GameState.FINALE_QUESTION,
     GameState.FINALE_REVEAL,
     GameState.ROUND_RESULTS,
@@ -62,6 +63,7 @@ export function registerHostHandlers(
     } else if (
       state === GameState.SPEED_MATH_ACTIVE ||
       state === GameState.FIFTEEN_ACTIVE ||
+      state === GameState.FLOW_CONNECT_ACTIVE ||
       state === GameState.QUESTION_ACTIVE
     ) {
       durationMs = engine.getCurrentRoundConfig().timerSeconds * 1000;
@@ -82,7 +84,8 @@ export function registerHostHandlers(
         const willScore =
           prevState === GameState.QUESTION_ACTIVE ||
           prevState === GameState.SPEED_MATH_ACTIVE ||
-          prevState === GameState.FIFTEEN_ACTIVE;
+          prevState === GameState.FIFTEEN_ACTIVE ||
+          prevState === GameState.FLOW_CONNECT_ACTIVE;
         const previousLeaderboard = willScore ? engine.getLeaderboard() : null;
 
         engine.endTimer();
@@ -98,6 +101,7 @@ export function registerHostHandlers(
           newState === GameState.QUESTION_ACTIVE ||
           newState === GameState.SPEED_MATH_ACTIVE ||
           newState === GameState.FIFTEEN_ACTIVE ||
+          newState === GameState.FLOW_CONNECT_ACTIVE ||
           newState === GameState.FINALE_QUESTION
         ) {
           startTimerForState();
@@ -120,6 +124,7 @@ export function registerHostHandlers(
       newState === GameState.QUESTION_ACTIVE ||
       newState === GameState.SPEED_MATH_ACTIVE ||
       newState === GameState.FIFTEEN_ACTIVE ||
+      newState === GameState.FLOW_CONNECT_ACTIVE ||
       newState === GameState.FINALE_QUESTION
     ) {
       startTimerForState();
@@ -216,6 +221,21 @@ export function registerHostHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('host:end_fifteen_round error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:end_flow_connect_round', (_data, callback) => {
+    try {
+      assertHost();
+      if (engine.getGameState() !== GameState.FLOW_CONNECT_ACTIVE) {
+        throw new Error('Flow Connect round is not active');
+      }
+      timer.forceExpire();
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:end_flow_connect_round error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

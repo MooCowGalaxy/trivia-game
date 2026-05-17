@@ -9,6 +9,7 @@ export enum GameState {
   ROUND_RESULTS = 'ROUND_RESULTS',
   SPEED_MATH_ACTIVE = 'SPEED_MATH_ACTIVE',
   FIFTEEN_ACTIVE = 'FIFTEEN_ACTIVE',
+  FLOW_CONNECT_ACTIVE = 'FLOW_CONNECT_ACTIVE',
   FINALE_INTRO = 'FINALE_INTRO',
   FINALE_QUESTION = 'FINALE_QUESTION',
   FINALE_REVEAL = 'FINALE_REVEAL',
@@ -17,7 +18,7 @@ export enum GameState {
 
 // ─── Round & Answer Types ─────────────────────────────────────────────────────
 
-export type RoundType = 'speed_math' | 'fifteen' | 'pattern' | 'visual_spatial' | 'mixed_logic_fermi';
+export type RoundType = 'speed_math' | 'fifteen' | 'flow_connect' | 'pattern' | 'visual_spatial' | 'mixed_logic_fermi';
 export type AnswerType = 'exact_number' | 'multiple_choice' | 'fermi' | 'text';
 export type DisplayType = 'image' | 'generated';
 
@@ -46,6 +47,12 @@ export interface SpeedMathGeneratorParams {
 export interface FifteenParams {
   winnerCount: number;
   scrambleMoves?: number;
+}
+
+export interface FlowConnectParams {
+  boardSize: number;
+  colorCount: number;
+  winnerCount: number;
 }
 
 export interface QuestionDisplay {
@@ -83,6 +90,7 @@ export interface RoundConfig {
   questions?: QuestionConfig[];
   generatorParams?: SpeedMathGeneratorParams;
   fifteenParams?: FifteenParams;
+  flowConnectParams?: FlowConnectParams;
   categorySource?: CategorySource;
 }
 
@@ -141,6 +149,31 @@ export interface FifteenPlayerState {
   rank: number | null;
 }
 
+// ─── Flow Connect State ─────────────────────────────────────────────────────
+
+export interface FlowCoordinate {
+  row: number;
+  col: number;
+}
+
+export interface FlowEndpoint {
+  color: number;
+  start: FlowCoordinate;
+  end: FlowCoordinate;
+}
+
+export interface FlowConnectPlayerState {
+  completedAt: number | null;
+  rank: number | null;
+}
+
+export interface FlowConnectRoundState {
+  size: number;
+  colorCount: number;
+  solvedGrid: number[][];
+  endpoints: FlowEndpoint[];
+}
+
 // ─── Round State ──────────────────────────────────────────────────────────────
 
 export interface RoundState {
@@ -152,6 +185,10 @@ export interface RoundState {
   fifteenInitialBoard: number[] | null;
   /** playerId → FifteenPlayerState (only used in fifteen rounds) */
   fifteenStates: Map<string, FifteenPlayerState>;
+  /** Generated Flow Connect puzzle for the current round. */
+  flowConnectPuzzle: FlowConnectRoundState | null;
+  /** playerId → FlowConnectPlayerState (only used in flow_connect rounds) */
+  flowConnectStates: Map<string, FlowConnectPlayerState>;
 }
 
 // ─── Finale State ─────────────────────────────────────────────────────────────
@@ -184,6 +221,10 @@ export interface GameEngineState {
   roundScores: Map<number, Map<string, Map<string, number>>>;
   /** Pre-generated questions keyed by round index */
   generatedQuestions: Map<number, GeneratedQuestion[]>;
+  /** Pre-generated Fifteen boards keyed by round index */
+  generatedFifteenBoards: Map<number, number[]>;
+  /** Pre-generated Flow Connect puzzles keyed by round index */
+  generatedFlowConnectPuzzles: Map<number, FlowConnectRoundState>;
   /** playerId → cumulative response time in ms (for tiebreaker) */
   totalResponseTimeMs: Map<string, number>;
 }

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { FifteenBoard } from "@/components/FifteenBoard"
+import { PuzzleSolvedCelebration } from "@/components/PuzzleSolvedCelebration"
 import { Timer } from "@/components/Timer"
 import { GameContext } from "@/context/GameContext"
 import { useAuth } from "@/hooks/useAuth"
@@ -148,7 +149,9 @@ function FifteenPuzzle({
         </div>
 
         <Card>
-          <CardContent className="space-y-5 p-5 sm:p-6">
+          <CardContent className="relative space-y-5 overflow-hidden p-5 sm:p-6">
+            <PuzzleSolvedCelebration show={completed} />
+
             {!canSubmit && (
               <div className="rounded-md border border-blue-300/20 bg-blue-300/10 px-4 py-3 text-center text-sm text-blue-100">
                 You are spectating, so your solve will not count. You can still

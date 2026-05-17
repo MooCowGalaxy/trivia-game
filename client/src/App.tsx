@@ -23,6 +23,7 @@ import { QuestionReveal } from "@/views/QuestionReveal"
 import { RoundResults } from "@/views/RoundResults"
 import { SpeedMathActive } from "@/views/SpeedMathActive"
 import { FifteenActive } from "@/views/FifteenActive"
+import { FlowConnectActive } from "@/views/FlowConnectActive"
 import { FinaleIntro } from "@/views/FinaleIntro"
 import { FinaleQuestion } from "@/views/FinaleQuestion"
 import { GameOver } from "@/views/GameOver"
@@ -37,6 +38,7 @@ const STATE_VIEWS: Record<GameStateName, React.FC> = {
   ROUND_RESULTS: RoundResults,
   SPEED_MATH_ACTIVE: SpeedMathActive,
   FIFTEEN_ACTIVE: FifteenActive,
+  FLOW_CONNECT_ACTIVE: FlowConnectActive,
   FINALE_INTRO: FinaleIntro,
   FINALE_QUESTION: FinaleQuestion,
   FINALE_REVEAL: QuestionReveal,

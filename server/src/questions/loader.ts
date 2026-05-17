@@ -36,14 +36,20 @@ const SpeedMathGeneratorParamsSchema = z.object({
 });
 
 const FifteenParamsSchema = z.object({
-  winnerCount: z.number().int().positive(),
+  winnerCount: z.number().int(),
   scrambleMoves: z.number().int().positive().optional(),
+});
+
+const FlowConnectParamsSchema = z.object({
+  boardSize: z.number().int().min(3),
+  colorCount: z.number().int().min(2),
+  winnerCount: z.number().int(),
 });
 
 const RoundConfigSchema = z
   .object({
     roundNumber: z.number().int().positive(),
-    type: z.enum(['speed_math', 'fifteen', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
+    type: z.enum(['speed_math', 'fifteen', 'flow_connect', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
     title: z.string(),
     description: z.string().optional(),
     typeLabel: z.string().optional(),
@@ -53,6 +59,7 @@ const RoundConfigSchema = z
     questions: z.array(QuestionConfigSchema).optional(),
     generatorParams: SpeedMathGeneratorParamsSchema.optional(),
     fifteenParams: FifteenParamsSchema.optional(),
+    flowConnectParams: FlowConnectParamsSchema.optional(),
     categorySource: CategorySourceSchema.optional(),
   })
   .superRefine((round, ctx) => {
@@ -70,6 +77,20 @@ const RoundConfigSchema = z
           code: z.ZodIssueCode.custom,
           message: `Round ${round.roundNumber} (fifteen) requires fifteenParams`,
           path: ['fifteenParams'],
+        });
+      }
+    } else if (round.type === 'flow_connect') {
+      if (!round.flowConnectParams) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (flow_connect) requires flowConnectParams`,
+          path: ['flowConnectParams'],
+        });
+      } else if (round.flowConnectParams.boardSize * round.flowConnectParams.boardSize < round.flowConnectParams.colorCount * 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (flow_connect) needs at least two cells per color`,
+          path: ['flowConnectParams'],
         });
       }
     } else {

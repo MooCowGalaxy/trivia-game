@@ -16,7 +16,9 @@ import { renderMathExpression } from './questions/renderer.js';
 import { GameEngine } from './game/engine.js';
 import { GameTimer } from './game/timer.js';
 import { GameState } from './game/types.js';
-import type { GeneratedQuestion } from './game/types.js';
+import type { FlowConnectRoundState, GeneratedQuestion } from './game/types.js';
+import { generateFifteenBoard } from './game/fifteen.js';
+import { generateFlowConnectPuzzle } from './game/flowConnect.js';
 import { registerHostHandlers } from './socket/hostHandlers.js';
 import { registerPlayerHandlers, setBroadcastDebounceMs } from './socket/playerHandlers.js';
 
@@ -82,9 +84,43 @@ for (let i = 0; i < gameConfig.rounds.length; i++) {
   }
 }
 
+// ── Generate shared puzzle boards ─────────────────────────────────────────────
+
+const generatedFifteenBoardsMap = new Map<number, number[]>();
+const generatedFlowConnectPuzzlesMap = new Map<number, FlowConnectRoundState>();
+
+for (let i = 0; i < gameConfig.rounds.length; i++) {
+  const round = gameConfig.rounds[i]!;
+
+  if (round.type === 'fifteen') {
+    const scrambleMoves = round.fifteenParams?.scrambleMoves ?? 120;
+    console.log(`Generating Fifteen board for round ${round.roundNumber}...`);
+    generatedFifteenBoardsMap.set(i, generateFifteenBoard(scrambleMoves));
+    console.log(`  Generated Fifteen board with ${scrambleMoves} scramble moves`);
+  }
+
+  if (round.type === 'flow_connect') {
+    const params = round.flowConnectParams;
+    if (!params) {
+      throw new Error(`Flow Connect round ${round.roundNumber} requires flowConnectParams`);
+    }
+    console.log(
+      `Generating Flow Connect puzzle for round ${round.roundNumber} (${params.boardSize}x${params.boardSize}, ${params.colorCount} colors)...`,
+    );
+    const puzzle = generateFlowConnectPuzzle(params.boardSize, params.colorCount);
+    generatedFlowConnectPuzzlesMap.set(i, puzzle);
+    console.log(`  Generated Flow Connect puzzle with ${puzzle.endpoints.length} endpoint pairs`);
+  }
+}
+
 // ── Create game engine and timer ──────────────────────────────────────────────
 
-const engine = new GameEngine(gameConfig, generatedQuestionsMap);
+const engine = new GameEngine(
+  gameConfig,
+  generatedQuestionsMap,
+  generatedFifteenBoardsMap,
+  generatedFlowConnectPuzzlesMap,
+);
 const timer = new GameTimer();
 
 // ── getQuestionImageData helper ───────────────────────────────────────────────

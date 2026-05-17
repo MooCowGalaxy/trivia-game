@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { GameEngine } from '../game/engine.js';
 import type { GameTimer } from '../game/timer.js';
+import type { FlowConnectSubmittedPath } from '../game/flowConnect.js';
 import { GameState } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
 
@@ -89,6 +90,25 @@ function scheduleFifteenProgressBroadcast(ioRef: Server, engineRef: GameEngine, 
   }, broadcastDebounceMs);
 }
 
+let flowConnectProgressTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingFlowConnectProgress: { io: Server; engine: GameEngine; playerId: string; completed: boolean } | null = null;
+
+function scheduleFlowConnectProgressBroadcast(ioRef: Server, engineRef: GameEngine, pid: string, completed: boolean): void {
+  pendingFlowConnectProgress = { io: ioRef, engine: engineRef, playerId: pid, completed };
+  if (flowConnectProgressTimer) return;
+  flowConnectProgressTimer = setTimeout(() => {
+    flowConnectProgressTimer = null;
+    if (!pendingFlowConnectProgress) return;
+    const { io: sio, engine: eng, playerId: id, completed: comp } = pendingFlowConnectProgress;
+    pendingFlowConnectProgress = null;
+    sio.emit('game:flow_connect_progress', {
+      playerId: id,
+      completed: comp,
+      ...eng.getFlowConnectProgress(),
+    });
+  }, broadcastDebounceMs);
+}
+
 export function registerPlayerHandlers(
   socket: Socket,
   io: Server,
@@ -104,6 +124,7 @@ export function registerPlayerHandlers(
   const answerLimit = createRateLimiter(10, 5000);       // 10 answers per 5s
   const speedMathLimit = createRateLimiter(30, 5000);    // 30 speed math answers per 5s
   const fifteenLimit = createRateLimiter(5, 5000);       // 5 solve submissions per 5s
+  const flowConnectLimit = createRateLimiter(5, 5000);   // 5 solve submissions per 5s
   const joinLimit = createRateLimiter(3, 5000);         // 3 join/spectate per 5s
 
   // ── Answer submission ─────────────────────────────────────────────────────
@@ -210,6 +231,42 @@ export function registerPlayerHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('player:fifteen_solve error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  // ── Flow Connect solve submission ─────────────────────────────────────────
+
+  socket.on('player:flow_connect_solve', (data: { paths: FlowConnectSubmittedPath[] }, callback) => {
+    try {
+      if (!flowConnectLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const result = engine.submitFlowConnectSolve(playerId, data.paths);
+
+      socket.emit('player:flow_connect_result', {
+        completed: result.accepted,
+        reason: result.reason,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ ok: result.accepted, reason: result.reason });
+      }
+
+      if (result.accepted) {
+        const base = engine.computeBroadcastBase(getQuestionImageData);
+        socket.emit('game:state_change', engine.getPlayerOverlay(playerId, base));
+        scheduleFlowConnectProgressBroadcast(io, engine, playerId, true);
+
+        if (engine.shouldEndFlowConnectRound()) {
+          timer.forceExpire();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:flow_connect_solve error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

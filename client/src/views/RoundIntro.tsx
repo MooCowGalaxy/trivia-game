@@ -10,6 +10,7 @@ const ROUND_TYPE_LABELS: Record<string, string> = {
   text: "Text Answer",
   speed_math: "Speed Math",
   fifteen: "Fifteen",
+  flow_connect: "Flow Connect",
   pattern: "Multiple Choice",
   image: "Image Round",
 }
@@ -22,6 +23,7 @@ export function RoundIntro() {
 
   const typeLabel = round.typeLabel ?? ROUND_TYPE_LABELS[round.type] ?? round.type
   const isFifteen = round.type === "fifteen"
+  const isFlowConnect = round.type === "flow_connect"
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -58,6 +60,20 @@ export function RoundIntro() {
                 the empty space to slide that tile into the empty space.
               </p>
             </div>
+          </div>
+        )}
+
+        {isFlowConnect && (
+          <div className="mx-auto max-w-lg space-y-2 text-muted-foreground animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <p className="text-base">
+              Connect each pair of matching dots with a path, and fill every
+              square on the board.
+            </p>
+            <p className="text-sm">
+              Drag from a dot to draw its path. Crossing another path will cut
+              that path, and lifting your finger or mouse leaves the connection
+              where it ends.
+            </p>
           </div>
         )}
 

@@ -17,6 +17,7 @@ export type GameStateName =
   | "ROUND_RESULTS"
   | "SPEED_MATH_ACTIVE"
   | "FIFTEEN_ACTIVE"
+  | "FLOW_CONNECT_ACTIVE"
   | "FINALE_INTRO"
   | "FINALE_QUESTION"
   | "FINALE_REVEAL"
@@ -75,6 +76,27 @@ export interface FifteenState {
   totalPlayers: number
 }
 
+export interface FlowCoordinate {
+  row: number
+  col: number
+}
+
+export interface FlowEndpoint {
+  color: number
+  start: FlowCoordinate
+  end: FlowCoordinate
+}
+
+export interface FlowConnectState {
+  size: number
+  colorCount: number
+  endpoints: FlowEndpoint[]
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
 export interface PublicGameState {
   gameId: string
   hostDiscordId: string
@@ -100,6 +122,7 @@ export interface PublicGameState {
   roundPointsBreakdown: { base: number; speedBonus: number } | null
   speedMathState: SpeedMathState | null
   fifteenState: FifteenState | null
+  flowConnectState: FlowConnectState | null
 }
 
 export interface SubmissionCount {
@@ -134,6 +157,19 @@ export interface FifteenResult {
   reason?: string
 }
 
+export interface FlowConnectProgress {
+  playerId: string
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export interface FlowConnectResult {
+  completed: boolean
+  reason?: string
+}
+
 export interface LeaderboardUpdate {
   previous: LeaderboardEntry[]
   current: LeaderboardEntry[]
@@ -148,6 +184,8 @@ export interface GameContextValue {
   speedMathResult: SpeedMathResult | null
   fifteenProgress: FifteenProgress | null
   fifteenResult: FifteenResult | null
+  flowConnectProgress: FlowConnectProgress | null
+  flowConnectResult: FlowConnectResult | null
   timerRemainingMs: number | null
   leaderboard: LeaderboardEntry[]
   leaderboardUpdate: LeaderboardUpdate | null
@@ -170,6 +208,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     useState<FifteenProgress | null>(null)
   const [fifteenResult, setFifteenResult] =
     useState<FifteenResult | null>(null)
+  const [flowConnectProgress, setFlowConnectProgress] =
+    useState<FlowConnectProgress | null>(null)
+  const [flowConnectResult, setFlowConnectResult] =
+    useState<FlowConnectResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
@@ -180,7 +222,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
 
     // Register all event handlers BEFORE connecting to avoid race conditions
 
-    socket.on("game:state_change", (state: PublicGameState) => {
+    const handleStateChange = (state: PublicGameState) => {
       setGameState((prev) => {
         // Reset submission count when question changes
         if (prev?.currentQuestion?.id !== state.currentQuestion?.id) {
@@ -198,6 +240,18 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
           setFifteenProgress(null)
           setFifteenResult(null)
         }
+        if (state.flowConnectState) {
+          setFlowConnectProgress({
+            playerId: "",
+            completed: state.flowConnectState.completed,
+            completedCount: state.flowConnectState.completedCount,
+            winnerCount: state.flowConnectState.winnerCount,
+            totalPlayers: state.flowConnectState.totalPlayers,
+          })
+        } else {
+          setFlowConnectProgress(null)
+          setFlowConnectResult(null)
+        }
         // Clear leaderboard update when leaving reveal/results states
         // (so reconnecting users don't see stale animation data)
         if (
@@ -211,9 +265,9 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       if (state.timerRemainingMs != null) {
         setTimerRemainingMs(state.timerRemainingMs)
       }
-    })
+    }
 
-    socket.on("game:timer_sync", (data: { remainingMs: number }) => {
+    const handleTimerSync = (data: { remainingMs: number }) => {
       setTimerRemainingMs((prev) => {
         // Ignore timer syncs that jump up (new timer started before
         // the corresponding state_change arrived on this client)
@@ -222,55 +276,74 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
         }
         return data.remainingMs
       })
-    })
+    }
 
-    socket.on("game:submission_count", (data: SubmissionCount) => {
+    const handleSubmissionCount = (data: SubmissionCount) => {
       setSubmissionCount(data)
-    })
+    }
 
-    socket.on(
-      "game:speed_math_progress",
-      (data: SpeedMathProgressEntry) => {
-        setSpeedMathProgress((prev) => ({
-          ...prev,
-          [data.playerId]: data,
-        }))
-      }
-    )
+    const handleSpeedMathProgress = (data: SpeedMathProgressEntry) => {
+      setSpeedMathProgress((prev) => ({
+        ...prev,
+        [data.playerId]: data,
+      }))
+    }
 
-    socket.on("game:fifteen_progress", (data: FifteenProgress) => {
+    const handleFifteenProgress = (data: FifteenProgress) => {
       setFifteenProgress(data)
-    })
+    }
 
-    socket.on("game:leaderboard_update", (data: LeaderboardUpdate) => {
+    const handleFlowConnectProgress = (data: FlowConnectProgress) => {
+      setFlowConnectProgress(data)
+    }
+
+    const handleLeaderboardUpdate = (data: LeaderboardUpdate) => {
       setLeaderboard(data.current)
       setLeaderboardUpdate(data)
-    })
+    }
 
-    socket.on("game:players_sync", (players: Player[]) => {
+    const handlePlayersSync = (players: Player[]) => {
       setGameState((prev) => {
         if (!prev) return prev
         return { ...prev, players }
       })
-    })
+    }
 
     // --- Individual player events ---
 
-    socket.on("player:speed_math_result", (data: SpeedMathResult) => {
+    const handleSpeedMathResult = (data: SpeedMathResult) => {
       setSpeedMathResult(data)
-    })
+    }
 
-    socket.on("player:fifteen_result", (data: FifteenResult) => {
+    const handleFifteenResult = (data: FifteenResult) => {
       setFifteenResult(data)
-    })
+    }
 
-    socket.on("connect", () => {
+    const handleFlowConnectResult = (data: FlowConnectResult) => {
+      setFlowConnectResult(data)
+    }
+
+    const handleConnect = () => {
       console.log("[socket] connected:", socket.id)
-    })
+    }
 
-    socket.on("connect_error", (err) => {
+    const handleConnectError = (err: Error) => {
       console.error("[socket] connect_error:", err.message)
-    })
+    }
+
+    socket.on("game:state_change", handleStateChange)
+    socket.on("game:timer_sync", handleTimerSync)
+    socket.on("game:submission_count", handleSubmissionCount)
+    socket.on("game:speed_math_progress", handleSpeedMathProgress)
+    socket.on("game:fifteen_progress", handleFifteenProgress)
+    socket.on("game:flow_connect_progress", handleFlowConnectProgress)
+    socket.on("game:leaderboard_update", handleLeaderboardUpdate)
+    socket.on("game:players_sync", handlePlayersSync)
+    socket.on("player:speed_math_result", handleSpeedMathResult)
+    socket.on("player:fifteen_result", handleFifteenResult)
+    socket.on("player:flow_connect_result", handleFlowConnectResult)
+    socket.on("connect", handleConnect)
+    socket.on("connect_error", handleConnectError)
 
     // NOW connect (all handlers are registered)
     socket.connect()
@@ -289,17 +362,19 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       .catch(() => {})
 
     return () => {
-      socket.off("connect")
-      socket.off("connect_error")
-      socket.off("game:state_change")
-      socket.off("game:timer_sync")
-      socket.off("game:submission_count")
-      socket.off("game:speed_math_progress")
-      socket.off("game:fifteen_progress")
-      socket.off("game:leaderboard_update")
-      socket.off("game:players_sync")
-      socket.off("player:speed_math_result")
-      socket.off("player:fifteen_result")
+      socket.off("connect", handleConnect)
+      socket.off("connect_error", handleConnectError)
+      socket.off("game:state_change", handleStateChange)
+      socket.off("game:timer_sync", handleTimerSync)
+      socket.off("game:submission_count", handleSubmissionCount)
+      socket.off("game:speed_math_progress", handleSpeedMathProgress)
+      socket.off("game:fifteen_progress", handleFifteenProgress)
+      socket.off("game:flow_connect_progress", handleFlowConnectProgress)
+      socket.off("game:leaderboard_update", handleLeaderboardUpdate)
+      socket.off("game:players_sync", handlePlayersSync)
+      socket.off("player:speed_math_result", handleSpeedMathResult)
+      socket.off("player:fifteen_result", handleFifteenResult)
+      socket.off("player:flow_connect_result", handleFlowConnectResult)
       socket.disconnect()
     }
   }, [authenticated])
@@ -311,6 +386,8 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     speedMathResult,
     fifteenProgress,
     fifteenResult,
+    flowConnectProgress,
+    flowConnectResult,
     timerRemainingMs,
     leaderboard,
     leaderboardUpdate,

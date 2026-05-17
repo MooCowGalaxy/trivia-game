@@ -7,7 +7,7 @@ import { HostDashboard } from "@/host/HostDashboard"
 type AckResponse = { ok: boolean; error?: string }
 
 export function HostControls() {
-  const { gameState, submissionCount, fifteenProgress } = useGameState()
+  const { gameState, submissionCount, fifteenProgress, flowConnectProgress } = useGameState()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -97,6 +97,26 @@ export function HostControls() {
             variant="outline"
             disabled={loading}
             onClick={() => emitAction("host:end_fifteen_round")}
+          >
+            End Round
+          </Button>
+        </div>
+      )}
+
+      {state === "FLOW_CONNECT_ACTIVE" && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground text-center py-2">
+            {formatSolvedCount(
+              flowConnectProgress?.completedCount ??
+                gameState.flowConnectState?.completedCount ??
+                0
+            )}
+          </p>
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={loading}
+            onClick={() => emitAction("host:end_flow_connect_round")}
           >
             End Round
           </Button>
