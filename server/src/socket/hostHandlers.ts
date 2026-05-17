@@ -27,6 +27,8 @@ export function registerHostHandlers(
     GameState.SPEED_MATH_ACTIVE,
     GameState.FIFTEEN_ACTIVE,
     GameState.FLOW_CONNECT_ACTIVE,
+    GameState.PIPE_ROTATION_ACTIVE,
+    GameState.RUSH_HOUR_ACTIVE,
     GameState.FINALE_QUESTION,
     GameState.FINALE_REVEAL,
     GameState.ROUND_RESULTS,
@@ -64,6 +66,8 @@ export function registerHostHandlers(
       state === GameState.SPEED_MATH_ACTIVE ||
       state === GameState.FIFTEEN_ACTIVE ||
       state === GameState.FLOW_CONNECT_ACTIVE ||
+      state === GameState.PIPE_ROTATION_ACTIVE ||
+      state === GameState.RUSH_HOUR_ACTIVE ||
       state === GameState.QUESTION_ACTIVE
     ) {
       durationMs = engine.getCurrentRoundConfig().timerSeconds * 1000;
@@ -85,7 +89,9 @@ export function registerHostHandlers(
           prevState === GameState.QUESTION_ACTIVE ||
           prevState === GameState.SPEED_MATH_ACTIVE ||
           prevState === GameState.FIFTEEN_ACTIVE ||
-          prevState === GameState.FLOW_CONNECT_ACTIVE;
+          prevState === GameState.FLOW_CONNECT_ACTIVE ||
+          prevState === GameState.PIPE_ROTATION_ACTIVE ||
+          prevState === GameState.RUSH_HOUR_ACTIVE;
         const previousLeaderboard = willScore ? engine.getLeaderboard() : null;
 
         engine.endTimer();
@@ -102,6 +108,8 @@ export function registerHostHandlers(
           newState === GameState.SPEED_MATH_ACTIVE ||
           newState === GameState.FIFTEEN_ACTIVE ||
           newState === GameState.FLOW_CONNECT_ACTIVE ||
+          newState === GameState.PIPE_ROTATION_ACTIVE ||
+          newState === GameState.RUSH_HOUR_ACTIVE ||
           newState === GameState.FINALE_QUESTION
         ) {
           startTimerForState();
@@ -125,6 +133,8 @@ export function registerHostHandlers(
       newState === GameState.SPEED_MATH_ACTIVE ||
       newState === GameState.FIFTEEN_ACTIVE ||
       newState === GameState.FLOW_CONNECT_ACTIVE ||
+      newState === GameState.PIPE_ROTATION_ACTIVE ||
+      newState === GameState.RUSH_HOUR_ACTIVE ||
       newState === GameState.FINALE_QUESTION
     ) {
       startTimerForState();
@@ -236,6 +246,36 @@ export function registerHostHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('host:end_flow_connect_round error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:end_pipe_rotation_round', (_data, callback) => {
+    try {
+      assertHost();
+      if (engine.getGameState() !== GameState.PIPE_ROTATION_ACTIVE) {
+        throw new Error('Pipe Rotation round is not active');
+      }
+      timer.forceExpire();
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:end_pipe_rotation_round error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:end_rush_hour_round', (_data, callback) => {
+    try {
+      assertHost();
+      if (engine.getGameState() !== GameState.RUSH_HOUR_ACTIVE) {
+        throw new Error('Rush Hour round is not active');
+      }
+      timer.forceExpire();
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:end_rush_hour_round error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

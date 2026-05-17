@@ -46,10 +46,35 @@ const FlowConnectParamsSchema = z.object({
   winnerCount: z.number().int(),
 });
 
+const PipeRotationParamsSchema = z.object({
+  rows: z.number().int().min(3),
+  cols: z.number().int().min(3),
+  terminalCount: z.number().int().min(1),
+  winnerCount: z.number().int(),
+  minDeadEnds: z.number().int().min(0).optional(),
+  minBranches: z.number().int().min(0).optional(),
+  minMisrotatedTiles: z.number().int().min(0).optional(),
+  minRotationDistance: z.number().int().min(0).optional(),
+});
+
+const RushHourParamsSchema = z.object({
+  size: z.number().int().min(5),
+  vehicleCount: z.number().int().min(4),
+  truckCount: z.number().int().min(0),
+  winnerCount: z.number().int(),
+  scrambleMoves: z.number().int().positive().optional(),
+  minOneCellMoves: z.number().int().positive().optional(),
+  maxOneCellMoves: z.number().int().positive().optional(),
+  minVehicleMoves: z.number().int().positive().optional(),
+  maxVehicleMoves: z.number().int().positive().optional(),
+  minExploredStates: z.number().int().min(0).optional(),
+  minTargetRowBlockers: z.number().int().min(0).optional(),
+});
+
 const RoundConfigSchema = z
   .object({
     roundNumber: z.number().int().positive(),
-    type: z.enum(['speed_math', 'fifteen', 'flow_connect', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
+    type: z.enum(['speed_math', 'fifteen', 'flow_connect', 'pipe_rotation', 'rush_hour', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
     title: z.string(),
     description: z.string().optional(),
     typeLabel: z.string().optional(),
@@ -60,6 +85,8 @@ const RoundConfigSchema = z
     generatorParams: SpeedMathGeneratorParamsSchema.optional(),
     fifteenParams: FifteenParamsSchema.optional(),
     flowConnectParams: FlowConnectParamsSchema.optional(),
+    pipeRotationParams: PipeRotationParamsSchema.optional(),
+    rushHourParams: RushHourParamsSchema.optional(),
     categorySource: CategorySourceSchema.optional(),
   })
   .superRefine((round, ctx) => {
@@ -91,6 +118,54 @@ const RoundConfigSchema = z
           code: z.ZodIssueCode.custom,
           message: `Round ${round.roundNumber} (flow_connect) needs at least two cells per color`,
           path: ['flowConnectParams'],
+        });
+      }
+    } else if (round.type === 'pipe_rotation') {
+      if (!round.pipeRotationParams) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (pipe_rotation) requires pipeRotationParams`,
+          path: ['pipeRotationParams'],
+        });
+      } else if (round.pipeRotationParams.terminalCount + 1 > round.pipeRotationParams.rows * round.pipeRotationParams.cols) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (pipe_rotation) has too many terminals`,
+          path: ['pipeRotationParams'],
+        });
+      }
+    } else if (round.type === 'rush_hour') {
+      if (!round.rushHourParams) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (rush_hour) requires rushHourParams`,
+          path: ['rushHourParams'],
+        });
+      } else if (round.rushHourParams.truckCount >= round.rushHourParams.vehicleCount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (rush_hour) truckCount must be less than vehicleCount`,
+          path: ['rushHourParams'],
+        });
+      } else if (
+        round.rushHourParams.minOneCellMoves &&
+        round.rushHourParams.maxOneCellMoves &&
+        round.rushHourParams.maxOneCellMoves < round.rushHourParams.minOneCellMoves
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (rush_hour) has invalid one-cell move bounds`,
+          path: ['rushHourParams'],
+        });
+      } else if (
+        round.rushHourParams.minVehicleMoves &&
+        round.rushHourParams.maxVehicleMoves &&
+        round.rushHourParams.maxVehicleMoves < round.rushHourParams.minVehicleMoves
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (rush_hour) has invalid vehicle move bounds`,
+          path: ['rushHourParams'],
         });
       }
     } else {

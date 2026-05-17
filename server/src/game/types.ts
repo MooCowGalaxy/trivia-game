@@ -10,6 +10,8 @@ export enum GameState {
   SPEED_MATH_ACTIVE = 'SPEED_MATH_ACTIVE',
   FIFTEEN_ACTIVE = 'FIFTEEN_ACTIVE',
   FLOW_CONNECT_ACTIVE = 'FLOW_CONNECT_ACTIVE',
+  PIPE_ROTATION_ACTIVE = 'PIPE_ROTATION_ACTIVE',
+  RUSH_HOUR_ACTIVE = 'RUSH_HOUR_ACTIVE',
   FINALE_INTRO = 'FINALE_INTRO',
   FINALE_QUESTION = 'FINALE_QUESTION',
   FINALE_REVEAL = 'FINALE_REVEAL',
@@ -18,7 +20,15 @@ export enum GameState {
 
 // ─── Round & Answer Types ─────────────────────────────────────────────────────
 
-export type RoundType = 'speed_math' | 'fifteen' | 'flow_connect' | 'pattern' | 'visual_spatial' | 'mixed_logic_fermi';
+export type RoundType =
+  | 'speed_math'
+  | 'fifteen'
+  | 'flow_connect'
+  | 'pipe_rotation'
+  | 'rush_hour'
+  | 'pattern'
+  | 'visual_spatial'
+  | 'mixed_logic_fermi';
 export type AnswerType = 'exact_number' | 'multiple_choice' | 'fermi' | 'text';
 export type DisplayType = 'image' | 'generated';
 
@@ -53,6 +63,31 @@ export interface FlowConnectParams {
   boardSize: number;
   colorCount: number;
   winnerCount: number;
+}
+
+export interface PipeRotationParams {
+  rows: number;
+  cols: number;
+  terminalCount: number;
+  winnerCount: number;
+  minDeadEnds?: number;
+  minBranches?: number;
+  minMisrotatedTiles?: number;
+  minRotationDistance?: number;
+}
+
+export interface RushHourParams {
+  size: number;
+  vehicleCount: number;
+  truckCount: number;
+  winnerCount: number;
+  scrambleMoves?: number;
+  minOneCellMoves?: number;
+  maxOneCellMoves?: number;
+  minVehicleMoves?: number;
+  maxVehicleMoves?: number;
+  minExploredStates?: number;
+  minTargetRowBlockers?: number;
 }
 
 export interface QuestionDisplay {
@@ -91,6 +126,8 @@ export interface RoundConfig {
   generatorParams?: SpeedMathGeneratorParams;
   fifteenParams?: FifteenParams;
   flowConnectParams?: FlowConnectParams;
+  pipeRotationParams?: PipeRotationParams;
+  rushHourParams?: RushHourParams;
   categorySource?: CategorySource;
 }
 
@@ -174,6 +211,68 @@ export interface FlowConnectRoundState {
   endpoints: FlowEndpoint[];
 }
 
+// ─── Pipe Rotation State ───────────────────────────────────────────────────
+
+export interface PipeCoordinate {
+  row: number;
+  col: number;
+}
+
+export interface PipeTile {
+  row: number;
+  col: number;
+  solvedMask: number;
+  initialMask: number;
+  initialRotation: number;
+}
+
+export interface PipeRotationPlayerState {
+  completedAt: number | null;
+  rank: number | null;
+}
+
+export interface PipeRotationRoundState {
+  rows: number;
+  cols: number;
+  source: PipeCoordinate;
+  terminals: PipeCoordinate[];
+  tiles: PipeTile[];
+}
+
+// ─── Rush Hour State ────────────────────────────────────────────────────────
+
+export type RushHourOrientation = 'H' | 'V';
+
+export interface RushHourVehicle {
+  id: string;
+  row: number;
+  col: number;
+  length: number;
+  orientation: RushHourOrientation;
+  isTarget?: boolean;
+}
+
+export interface RushHourMove {
+  vehicleId: string;
+  delta: number;
+}
+
+export interface RushHourPlayerState {
+  completedAt: number | null;
+  moveCount: number | null;
+  rank: number | null;
+}
+
+export interface RushHourRoundState {
+  size: number;
+  targetId: string;
+  exitRow: number;
+  vehicles: RushHourVehicle[];
+  solvedVehicles: RushHourVehicle[];
+  optimalMoves: number;
+  optimalVehicleMoves: number;
+}
+
 // ─── Round State ──────────────────────────────────────────────────────────────
 
 export interface RoundState {
@@ -189,6 +288,14 @@ export interface RoundState {
   flowConnectPuzzle: FlowConnectRoundState | null;
   /** playerId → FlowConnectPlayerState (only used in flow_connect rounds) */
   flowConnectStates: Map<string, FlowConnectPlayerState>;
+  /** Generated Pipe Rotation puzzle for the current round. */
+  pipeRotationPuzzle: PipeRotationRoundState | null;
+  /** playerId → PipeRotationPlayerState (only used in pipe_rotation rounds) */
+  pipeRotationStates: Map<string, PipeRotationPlayerState>;
+  /** Generated Rush Hour puzzle for the current round. */
+  rushHourPuzzle: RushHourRoundState | null;
+  /** playerId → RushHourPlayerState (only used in rush_hour rounds) */
+  rushHourStates: Map<string, RushHourPlayerState>;
 }
 
 // ─── Finale State ─────────────────────────────────────────────────────────────
@@ -225,6 +332,10 @@ export interface GameEngineState {
   generatedFifteenBoards: Map<number, number[]>;
   /** Pre-generated Flow Connect puzzles keyed by round index */
   generatedFlowConnectPuzzles: Map<number, FlowConnectRoundState>;
+  /** Pre-generated Pipe Rotation puzzles keyed by round index */
+  generatedPipeRotationPuzzles: Map<number, PipeRotationRoundState>;
+  /** Pre-generated Rush Hour puzzles keyed by round index */
+  generatedRushHourPuzzles: Map<number, RushHourRoundState>;
   /** playerId → cumulative response time in ms (for tiebreaker) */
   totalResponseTimeMs: Map<string, number>;
 }

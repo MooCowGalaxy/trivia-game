@@ -16,9 +16,11 @@ import { renderMathExpression } from './questions/renderer.js';
 import { GameEngine } from './game/engine.js';
 import { GameTimer } from './game/timer.js';
 import { GameState } from './game/types.js';
-import type { FlowConnectRoundState, GeneratedQuestion } from './game/types.js';
+import type { FlowConnectRoundState, GeneratedQuestion, PipeRotationRoundState, RushHourRoundState } from './game/types.js';
 import { generateFifteenBoard } from './game/fifteen.js';
 import { generateFlowConnectPuzzle } from './game/flowConnect.js';
+import { generatePipeRotationPuzzle } from './game/pipeRotation.js';
+import { generateRushHourPuzzle } from './game/rushHour.js';
 import { registerHostHandlers } from './socket/hostHandlers.js';
 import { registerPlayerHandlers, setBroadcastDebounceMs } from './socket/playerHandlers.js';
 
@@ -88,6 +90,8 @@ for (let i = 0; i < gameConfig.rounds.length; i++) {
 
 const generatedFifteenBoardsMap = new Map<number, number[]>();
 const generatedFlowConnectPuzzlesMap = new Map<number, FlowConnectRoundState>();
+const generatedPipeRotationPuzzlesMap = new Map<number, PipeRotationRoundState>();
+const generatedRushHourPuzzlesMap = new Map<number, RushHourRoundState>();
 
 for (let i = 0; i < gameConfig.rounds.length; i++) {
   const round = gameConfig.rounds[i]!;
@@ -111,6 +115,50 @@ for (let i = 0; i < gameConfig.rounds.length; i++) {
     generatedFlowConnectPuzzlesMap.set(i, puzzle);
     console.log(`  Generated Flow Connect puzzle with ${puzzle.endpoints.length} endpoint pairs`);
   }
+
+  if (round.type === 'pipe_rotation') {
+    const params = round.pipeRotationParams;
+    if (!params) {
+      throw new Error(`Pipe Rotation round ${round.roundNumber} requires pipeRotationParams`);
+    }
+    console.log(
+      `Generating Pipe Rotation puzzle for round ${round.roundNumber} (${params.rows}x${params.cols}, ${params.terminalCount} terminals)...`,
+    );
+    const puzzle = generatePipeRotationPuzzle(params);
+    generatedPipeRotationPuzzlesMap.set(i, {
+      rows: puzzle.rows,
+      cols: puzzle.cols,
+      source: puzzle.source,
+      terminals: puzzle.terminals,
+      tiles: puzzle.tiles,
+    });
+    console.log(
+      `  Generated Pipe Rotation puzzle with ${puzzle.stats.deadEndCount} dead ends and rotation distance ${puzzle.stats.rotationDistance}`,
+    );
+  }
+
+  if (round.type === 'rush_hour') {
+    const params = round.rushHourParams;
+    if (!params) {
+      throw new Error(`Rush Hour round ${round.roundNumber} requires rushHourParams`);
+    }
+    console.log(
+      `Generating Rush Hour puzzle for round ${round.roundNumber} (${params.size}x${params.size}, ${params.vehicleCount} vehicles)...`,
+    );
+    const puzzle = generateRushHourPuzzle(params);
+    generatedRushHourPuzzlesMap.set(i, {
+      size: puzzle.size,
+      targetId: puzzle.targetId,
+      exitRow: puzzle.exitRow,
+      vehicles: puzzle.vehicles,
+      solvedVehicles: puzzle.solvedVehicles,
+      optimalMoves: puzzle.optimalMoves,
+      optimalVehicleMoves: puzzle.optimalVehicleMoves,
+    });
+    console.log(
+      `  Generated Rush Hour puzzle with ${puzzle.optimalMoves} one-cell moves and ${puzzle.optimalVehicleMoves} vehicle moves`,
+    );
+  }
 }
 
 // ── Create game engine and timer ──────────────────────────────────────────────
@@ -120,6 +168,8 @@ const engine = new GameEngine(
   generatedQuestionsMap,
   generatedFifteenBoardsMap,
   generatedFlowConnectPuzzlesMap,
+  generatedPipeRotationPuzzlesMap,
+  generatedRushHourPuzzlesMap,
 );
 const timer = new GameTimer();
 

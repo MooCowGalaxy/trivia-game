@@ -6,8 +6,10 @@ import type {
   GameEngineState,
   GeneratedQuestion,
   FlowConnectRoundState,
+  PipeRotationRoundState,
   Player,
   PlayerSubmission,
+  RushHourRoundState,
   RoundConfig,
   RoundState,
   QuestionConfig,
@@ -20,6 +22,8 @@ import {
   scoreSpeedMathRound,
   scoreFifteenRound,
   scoreFlowConnectRound,
+  scorePipeRotationRound,
+  scoreRushHourRound,
   scoreFermiQuestion,
   checkFinaleAnswer,
 } from './scoring.js';
@@ -33,6 +37,15 @@ import {
 import type {
   FlowConnectSubmittedPath,
 } from './flowConnect.js';
+import {
+  verifyPipeRotationSolution,
+} from './pipeRotation.js';
+import {
+  verifyRushHourSolve,
+} from './rushHour.js';
+import type {
+  RushHourMove,
+} from './rushHour.js';
 
 // ─── Broadcast base type (shared state computed once per broadcast) ──────────
 
@@ -77,6 +90,36 @@ export interface BroadcastBase {
     winnerCount: number;
     totalPlayers: number;
   } | null;
+  pipeRotationState: {
+    rows: number;
+    cols: number;
+    source: { row: number; col: number };
+    terminals: Array<{ row: number; col: number }>;
+    tiles: Array<{ row: number; col: number; initialMask: number }>;
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+  } | null;
+  rushHourState: {
+    size: number;
+    targetId: string;
+    exitRow: number;
+    vehicles: Array<{
+      id: string;
+      row: number;
+      col: number;
+      length: number;
+      orientation: 'H' | 'V';
+      isTarget?: boolean;
+    }>;
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+    optimalMoves: number;
+    optimalVehicleMoves: number;
+  } | null;
   currentQuestion: {
     id: string;
     display?: { type: string; src?: string };
@@ -109,6 +152,10 @@ function freshRoundState(): RoundState {
     fifteenStates: new Map(),
     flowConnectPuzzle: null,
     flowConnectStates: new Map(),
+    pipeRotationPuzzle: null,
+    pipeRotationStates: new Map(),
+    rushHourPuzzle: null,
+    rushHourStates: new Map(),
   };
 }
 
@@ -135,6 +182,28 @@ function cloneFlowConnectPuzzle(puzzle: FlowConnectRoundState): FlowConnectRound
   };
 }
 
+function clonePipeRotationPuzzle(puzzle: PipeRotationRoundState): PipeRotationRoundState {
+  return {
+    rows: puzzle.rows,
+    cols: puzzle.cols,
+    source: { ...puzzle.source },
+    terminals: puzzle.terminals.map((terminal) => ({ ...terminal })),
+    tiles: puzzle.tiles.map((tile) => ({ ...tile })),
+  };
+}
+
+function cloneRushHourPuzzle(puzzle: RushHourRoundState): RushHourRoundState {
+  return {
+    size: puzzle.size,
+    targetId: puzzle.targetId,
+    exitRow: puzzle.exitRow,
+    vehicles: puzzle.vehicles.map((vehicle) => ({ ...vehicle })),
+    solvedVehicles: puzzle.solvedVehicles.map((vehicle) => ({ ...vehicle })),
+    optimalMoves: puzzle.optimalMoves,
+    optimalVehicleMoves: puzzle.optimalVehicleMoves,
+  };
+}
+
 // ─── Game Engine ─────────────────────────────────────────────────────────────
 
 export class GameEngine {
@@ -145,6 +214,8 @@ export class GameEngine {
     generatedQuestions?: Map<number, GeneratedQuestion[]>,
     generatedFifteenBoards?: Map<number, number[]>,
     generatedFlowConnectPuzzles?: Map<number, FlowConnectRoundState>,
+    generatedPipeRotationPuzzles?: Map<number, PipeRotationRoundState>,
+    generatedRushHourPuzzles?: Map<number, RushHourRoundState>,
   ) {
     this.state = {
       gameId: config.gameId,
@@ -162,6 +233,8 @@ export class GameEngine {
       generatedQuestions: generatedQuestions ?? new Map(),
       generatedFifteenBoards: generatedFifteenBoards ?? new Map(),
       generatedFlowConnectPuzzles: generatedFlowConnectPuzzles ?? new Map(),
+      generatedPipeRotationPuzzles: generatedPipeRotationPuzzles ?? new Map(),
+      generatedRushHourPuzzles: generatedRushHourPuzzles ?? new Map(),
       totalResponseTimeMs: new Map(),
     };
   }
@@ -209,6 +282,19 @@ export class GameEngine {
       const roundState = this.getCurrentRoundState();
       roundState.flowConnectStates.set(id, {
         completedAt: null,
+        rank: null,
+      });
+    } else if (this.state.currentState === GameState.PIPE_ROTATION_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.pipeRotationStates.set(id, {
+        completedAt: null,
+        rank: null,
+      });
+    } else if (this.state.currentState === GameState.RUSH_HOUR_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.rushHourStates.set(id, {
+        completedAt: null,
+        moveCount: null,
         rank: null,
       });
     }
@@ -273,6 +359,14 @@ export class GameEngine {
           this.initFlowConnectRound();
           this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
           this.setState(GameState.FLOW_CONNECT_ACTIVE);
+        } else if (this.getCurrentRoundConfig().type === 'pipe_rotation') {
+          this.initPipeRotationRound();
+          this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
+          this.setState(GameState.PIPE_ROTATION_ACTIVE);
+        } else if (this.getCurrentRoundConfig().type === 'rush_hour') {
+          this.initRushHourRound();
+          this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
+          this.setState(GameState.RUSH_HOUR_ACTIVE);
         } else {
           // Go to countdown first, then QUESTION_ACTIVE after countdown expires
           this.startTimer(3000); // 3 second countdown
@@ -670,6 +764,179 @@ export class GameEngine {
     };
   }
 
+  // ── Solve Submission (Pipe Rotation) ───────────────────────────────────
+
+  submitPipeRotationSolve(
+    playerId: string,
+    masks: number[],
+  ): { accepted: boolean; reason?: string; completedCount: number; winnerCount: number } {
+    if (this.state.currentState !== GameState.PIPE_ROTATION_ACTIVE) {
+      return {
+        accepted: false,
+        reason: 'Pipe Rotation is not active',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    if (!this.state.players.has(playerId)) {
+      return {
+        accepted: false,
+        reason: 'Unknown player',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    if (this.isTimerExpired()) {
+      return {
+        accepted: false,
+        reason: 'Timer has expired',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const playerState = roundState.pipeRotationStates.get(playerId);
+    if (!playerState) {
+      return {
+        accepted: false,
+        reason: 'Player not found in Pipe Rotation state',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+    if (playerState.completedAt !== null) {
+      return {
+        accepted: false,
+        reason: 'Player already completed the puzzle',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    const puzzle = roundState.pipeRotationPuzzle;
+    if (!puzzle) {
+      return {
+        accepted: false,
+        reason: 'No Pipe Rotation puzzle for this round',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    const verification = verifyPipeRotationSolution(
+      puzzle.rows,
+      puzzle.cols,
+      puzzle.source,
+      puzzle.terminals,
+      masks,
+    );
+    if (!verification.valid) {
+      return {
+        accepted: false,
+        reason: verification.reason ?? 'Invalid solve',
+        completedCount: this.getPipeRotationCompletedCount(),
+        winnerCount: this.getPipeRotationWinnerCount(),
+      };
+    }
+
+    const rank = this.getPipeRotationCompletedCount() + 1;
+    playerState.completedAt = Date.now();
+    playerState.rank = rank;
+
+    return {
+      accepted: true,
+      completedCount: this.getPipeRotationCompletedCount(),
+      winnerCount: this.getPipeRotationWinnerCount(),
+    };
+  }
+
+  // ── Solve Submission (Rush Hour) ───────────────────────────────────────
+
+  submitRushHourSolve(
+    playerId: string,
+    moves: RushHourMove[],
+  ): { accepted: boolean; reason?: string; completedCount: number; winnerCount: number } {
+    if (this.state.currentState !== GameState.RUSH_HOUR_ACTIVE) {
+      return {
+        accepted: false,
+        reason: 'Rush Hour is not active',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    if (!this.state.players.has(playerId)) {
+      return {
+        accepted: false,
+        reason: 'Unknown player',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    if (this.isTimerExpired()) {
+      return {
+        accepted: false,
+        reason: 'Timer has expired',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const playerState = roundState.rushHourStates.get(playerId);
+    if (!playerState) {
+      return {
+        accepted: false,
+        reason: 'Player not found in Rush Hour state',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+    if (playerState.completedAt !== null) {
+      return {
+        accepted: false,
+        reason: 'Player already completed the puzzle',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    const puzzle = roundState.rushHourPuzzle;
+    if (!puzzle) {
+      return {
+        accepted: false,
+        reason: 'No Rush Hour puzzle for this round',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    const verification = verifyRushHourSolve(puzzle.vehicles, puzzle.size, moves);
+    if (!verification.valid) {
+      return {
+        accepted: false,
+        reason: verification.reason ?? 'Invalid solve',
+        completedCount: this.getRushHourCompletedCount(),
+        winnerCount: this.getRushHourWinnerCount(),
+      };
+    }
+
+    const rank = this.getRushHourCompletedCount() + 1;
+    playerState.completedAt = Date.now();
+    playerState.moveCount = verification.moveCount ?? moves.length;
+    playerState.rank = rank;
+
+    return {
+      accepted: true,
+      completedCount: this.getRushHourCompletedCount(),
+      winnerCount: this.getRushHourWinnerCount(),
+    };
+  }
+
   // ── Timer Expiry ───────────────────────────────────────────────────────
 
   endTimer(): void {
@@ -702,6 +969,16 @@ export class GameEngine {
 
       case GameState.FLOW_CONNECT_ACTIVE:
         this.scoreFlowConnectRound(timerStartedAt, timerDurationMs);
+        this.setState(GameState.ROUND_RESULTS);
+        break;
+
+      case GameState.PIPE_ROTATION_ACTIVE:
+        this.scorePipeRotationRound(timerStartedAt, timerDurationMs);
+        this.setState(GameState.ROUND_RESULTS);
+        break;
+
+      case GameState.RUSH_HOUR_ACTIVE:
+        this.scoreRushHourRound(timerStartedAt, timerDurationMs);
         this.setState(GameState.ROUND_RESULTS);
         break;
 
@@ -837,6 +1114,49 @@ export class GameEngine {
     }
   }
 
+  private scorePipeRotationRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const questionScores = scorePipeRotationRound(
+      roundState.pipeRotationStates,
+      round.basePoints,
+      round.speedBonusMax,
+      this.getPipeRotationWinnerCount(),
+    );
+
+    this.applyScores(questionScores, this.getPipeRotationRoundId());
+    this.addPuzzleResponseTimes(roundState.pipeRotationStates, timerStartedAt, timerDurationMs);
+  }
+
+  private scoreRushHourRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const questionScores = scoreRushHourRound(
+      roundState.rushHourStates,
+      round.basePoints,
+      round.speedBonusMax,
+      this.getRushHourWinnerCount(),
+    );
+
+    this.applyScores(questionScores, this.getRushHourRoundId());
+    this.addPuzzleResponseTimes(roundState.rushHourStates, timerStartedAt, timerDurationMs);
+  }
+
+  private addPuzzleResponseTimes(
+    playerStates: Map<string, { completedAt: number | null }>,
+    timerStartedAt: number | null,
+    timerDurationMs: number | null,
+  ): void {
+    if (timerStartedAt === null) return;
+    for (const [playerId, playerState] of playerStates) {
+      const responseTime = playerState.completedAt !== null
+        ? playerState.completedAt - timerStartedAt
+        : (timerDurationMs ?? 0);
+      const current = this.state.totalResponseTimeMs.get(playerId) ?? 0;
+      this.state.totalResponseTimeMs.set(playerId, current + responseTime);
+    }
+  }
+
   private scoreFinaleQuestion(): void {
     const finaleState = this.state.finaleState;
     const question = this.getCurrentFinaleQuestion();
@@ -950,7 +1270,13 @@ export class GameEngine {
   }
 
   private isAtomicRound(round: RoundConfig): boolean {
-    return round.type === 'speed_math' || round.type === 'fifteen' || round.type === 'flow_connect';
+    return (
+      round.type === 'speed_math' ||
+      round.type === 'fifteen' ||
+      round.type === 'flow_connect' ||
+      round.type === 'pipe_rotation' ||
+      round.type === 'rush_hour'
+    );
   }
 
   getLeaderboard(): LeaderboardEntry[] {
@@ -1071,6 +1397,66 @@ export class GameEngine {
     };
   }
 
+  getPipeRotationCompletedCount(): number {
+    const roundState = this.getCurrentRoundState();
+    return this.getActiveParticipantIds()
+      .filter((playerId) => roundState.pipeRotationStates.get(playerId)?.completedAt !== null)
+      .length;
+  }
+
+  getPipeRotationWinnerCount(): number {
+    const round = this.getCurrentRoundConfig();
+    return round.pipeRotationParams?.winnerCount ?? 1;
+  }
+
+  shouldEndPipeRotationRound(): boolean {
+    const winnerCount = this.getPipeRotationWinnerCount();
+    if (this.state.currentState !== GameState.PIPE_ROTATION_ACTIVE) return false;
+    const completedCount = this.getPipeRotationCompletedCount();
+    if (winnerCount > 0) return completedCount >= winnerCount;
+    const activeParticipants = this.getActiveParticipantIds();
+    return activeParticipants.length > 0 && completedCount >= activeParticipants.length;
+  }
+
+  getPipeRotationProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
+    const totalPlayers = this.getActiveParticipantIds().length;
+    return {
+      completedCount: this.getPipeRotationCompletedCount(),
+      winnerCount: this.getPipeRotationWinnerCount(),
+      totalPlayers,
+    };
+  }
+
+  getRushHourCompletedCount(): number {
+    const roundState = this.getCurrentRoundState();
+    return this.getActiveParticipantIds()
+      .filter((playerId) => roundState.rushHourStates.get(playerId)?.completedAt !== null)
+      .length;
+  }
+
+  getRushHourWinnerCount(): number {
+    const round = this.getCurrentRoundConfig();
+    return round.rushHourParams?.winnerCount ?? 1;
+  }
+
+  shouldEndRushHourRound(): boolean {
+    const winnerCount = this.getRushHourWinnerCount();
+    if (this.state.currentState !== GameState.RUSH_HOUR_ACTIVE) return false;
+    const completedCount = this.getRushHourCompletedCount();
+    if (winnerCount > 0) return completedCount >= winnerCount;
+    const activeParticipants = this.getActiveParticipantIds();
+    return activeParticipants.length > 0 && completedCount >= activeParticipants.length;
+  }
+
+  getRushHourProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
+    const totalPlayers = this.getActiveParticipantIds().length;
+    return {
+      completedCount: this.getRushHourCompletedCount(),
+      winnerCount: this.getRushHourWinnerCount(),
+      totalPlayers,
+    };
+  }
+
   getPlayers(): Map<string, Player> {
     return this.state.players;
   }
@@ -1133,6 +1519,8 @@ export class GameEngine {
       winnerCount: number;
       totalPlayers: number;
     } | null;
+    pipeRotationState: BroadcastBase['pipeRotationState'];
+    rushHourState: BroadcastBase['rushHourState'];
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -1176,6 +1564,8 @@ export class GameEngine {
         : null,
       fifteenState: this.getPublicFifteenState(null),
       flowConnectState: this.getPublicFlowConnectState(null),
+      pipeRotationState: this.getPublicPipeRotationState(null),
+      rushHourState: this.getPublicRushHourState(null),
       currentQuestion: question,
       timerRemainingMs: this.getTimerRemainingMs(),
       progressBar: this.getProgressBar(),
@@ -1247,7 +1637,9 @@ export class GameEngine {
     if (
       st === GameState.SPEED_MATH_ACTIVE ||
       st === GameState.FIFTEEN_ACTIVE ||
-      st === GameState.FLOW_CONNECT_ACTIVE
+      st === GameState.FLOW_CONNECT_ACTIVE ||
+      st === GameState.PIPE_ROTATION_ACTIVE ||
+      st === GameState.RUSH_HOUR_ACTIVE
     ) {
       questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
     }
@@ -1289,6 +1681,8 @@ export class GameEngine {
     } | null = null;
     let fifteenState = broadcastBase.fifteenState;
     let flowConnectState = broadcastBase.flowConnectState;
+    let pipeRotationState = broadcastBase.pipeRotationState;
+    let rushHourState = broadcastBase.rushHourState;
 
     const isQuestionActive = st === GameState.QUESTION_ACTIVE;
     const isQuestionReveal = st === GameState.QUESTION_REVEAL;
@@ -1366,6 +1760,14 @@ export class GameEngine {
       flowConnectState = this.getPublicFlowConnectState(playerId);
     }
 
+    if (st === GameState.PIPE_ROTATION_ACTIVE) {
+      pipeRotationState = this.getPublicPipeRotationState(playerId);
+    }
+
+    if (st === GameState.RUSH_HOUR_ACTIVE) {
+      rushHourState = this.getPublicRushHourState(playerId);
+    }
+
     // Round results points
     if (st === GameState.ROUND_RESULTS && playerId) {
       const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
@@ -1388,7 +1790,12 @@ export class GameEngine {
             base: accuracyBase,
             speedBonus: Math.max(0, total - accuracyBase),
           };
-        } else if (roundConfig.type === 'fifteen' || roundConfig.type === 'flow_connect') {
+        } else if (
+          roundConfig.type === 'fifteen' ||
+          roundConfig.type === 'flow_connect' ||
+          roundConfig.type === 'pipe_rotation' ||
+          roundConfig.type === 'rush_hour'
+        ) {
           roundPointsBreakdown = {
             base: Math.min(total, roundConfig.basePoints),
             speedBonus: Math.max(0, total - roundConfig.basePoints),
@@ -1407,6 +1814,8 @@ export class GameEngine {
       speedMathState,
       fifteenState,
       flowConnectState,
+      pipeRotationState,
+      rushHourState,
     };
   }
 
@@ -1462,6 +1871,8 @@ export class GameEngine {
       winnerCount: number;
       totalPlayers: number;
     } | null;
+    pipeRotationState: BroadcastBase['pipeRotationState'];
+    rushHourState: BroadcastBase['rushHourState'];
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -1591,6 +2002,39 @@ export class GameEngine {
     }
   }
 
+  private initPipeRotationRound(): void {
+    const roundState = this.getCurrentRoundState();
+    const puzzle = this.state.generatedPipeRotationPuzzles.get(this.state.currentRoundIndex);
+    if (!puzzle) {
+      throw new Error(`No pre-generated Pipe Rotation puzzle for round index ${this.state.currentRoundIndex}`);
+    }
+    roundState.pipeRotationPuzzle = clonePipeRotationPuzzle(puzzle);
+
+    for (const [playerId] of this.state.players) {
+      roundState.pipeRotationStates.set(playerId, {
+        completedAt: null,
+        rank: null,
+      });
+    }
+  }
+
+  private initRushHourRound(): void {
+    const roundState = this.getCurrentRoundState();
+    const puzzle = this.state.generatedRushHourPuzzles.get(this.state.currentRoundIndex);
+    if (!puzzle) {
+      throw new Error(`No pre-generated Rush Hour puzzle for round index ${this.state.currentRoundIndex}`);
+    }
+    roundState.rushHourPuzzle = cloneRushHourPuzzle(puzzle);
+
+    for (const [playerId] of this.state.players) {
+      roundState.rushHourStates.set(playerId, {
+        completedAt: null,
+        moveCount: null,
+        rank: null,
+      });
+    }
+  }
+
   private getPublicFifteenState(playerId: string | null): {
     initialBoard: number[];
     completed: boolean;
@@ -1662,6 +2106,73 @@ export class GameEngine {
 
   private getFlowConnectRoundId(): string {
     return `flow_connect_round_${this.state.currentRoundIndex}`;
+  }
+
+  private getPublicPipeRotationState(playerId: string | null): BroadcastBase['pipeRotationState'] {
+    if (this.state.currentState !== GameState.PIPE_ROTATION_ACTIVE) {
+      return null;
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const puzzle = roundState.pipeRotationPuzzle;
+    if (!puzzle) {
+      return null;
+    }
+
+    const playerState = playerId ? roundState.pipeRotationStates.get(playerId) : null;
+    const progress = this.getPipeRotationProgress();
+
+    return {
+      rows: puzzle.rows,
+      cols: puzzle.cols,
+      source: puzzle.source,
+      terminals: puzzle.terminals,
+      tiles: puzzle.tiles.map((tile) => ({
+        row: tile.row,
+        col: tile.col,
+        initialMask: tile.initialMask,
+      })),
+      completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
+      completedCount: progress.completedCount,
+      winnerCount: progress.winnerCount,
+      totalPlayers: progress.totalPlayers,
+    };
+  }
+
+  private getPublicRushHourState(playerId: string | null): BroadcastBase['rushHourState'] {
+    if (this.state.currentState !== GameState.RUSH_HOUR_ACTIVE) {
+      return null;
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const puzzle = roundState.rushHourPuzzle;
+    if (!puzzle) {
+      return null;
+    }
+
+    const playerState = playerId ? roundState.rushHourStates.get(playerId) : null;
+    const progress = this.getRushHourProgress();
+
+    return {
+      size: puzzle.size,
+      targetId: puzzle.targetId,
+      exitRow: puzzle.exitRow,
+      vehicles: puzzle.vehicles.map((vehicle) => ({ ...vehicle })),
+      completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
+      completedCount: progress.completedCount,
+      winnerCount: progress.winnerCount,
+      totalPlayers: progress.totalPlayers,
+      optimalMoves: puzzle.optimalMoves,
+      optimalVehicleMoves: puzzle.optimalVehicleMoves,
+    };
+  }
+
+  private getPipeRotationRoundId(): string {
+    return `pipe_rotation_round_${this.state.currentRoundIndex}`;
+  }
+
+  private getRushHourRoundId(): string {
+    return `rush_hour_round_${this.state.currentRoundIndex}`;
   }
 
   private startTimer(durationMs: number): void {

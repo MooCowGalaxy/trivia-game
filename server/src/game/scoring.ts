@@ -1,7 +1,9 @@
 import type {
   FifteenPlayerState,
   FlowConnectPlayerState,
+  PipeRotationPlayerState,
   PlayerSubmission,
+  RushHourPlayerState,
   SpeedMathPlayerState,
 } from './types.js';
 
@@ -101,35 +103,38 @@ export function scoreFifteenRound(
   speedBonusMax: number,
   winnerCount: number,
 ): Map<string, number> {
-  const scores = new Map<string, number>();
-  const completers = Array.from(playerStates.entries())
-    .filter(([, state]) => state.completedAt !== null && state.rank !== null)
-    .sort((a, b) => {
-      const rankA = a[1].rank ?? Number.MAX_SAFE_INTEGER;
-      const rankB = b[1].rank ?? Number.MAX_SAFE_INTEGER;
-      return rankA - rankB;
-    });
-  const winners = winnerCount < 1 ? completers : completers.slice(0, winnerCount);
-
-  for (const [playerId] of playerStates) {
-    scores.set(playerId, 0);
-  }
-
-  const totalWinners = winners.length;
-  for (let i = 0; i < winners.length; i++) {
-    const [playerId] = winners[i]!;
-    const speedBonus =
-      totalWinners === 1
-        ? speedBonusMax
-        : Math.floor(speedBonusMax * (1 - i / totalWinners));
-    scores.set(playerId, basePoints + speedBonus);
-  }
-
-  return scores;
+  return scoreRankedPuzzleRound(playerStates, basePoints, speedBonusMax, winnerCount);
 }
 
 export function scoreFlowConnectRound(
   playerStates: Map<string, FlowConnectPlayerState>,
+  basePoints: number,
+  speedBonusMax: number,
+  winnerCount: number,
+): Map<string, number> {
+  return scoreRankedPuzzleRound(playerStates, basePoints, speedBonusMax, winnerCount);
+}
+
+export function scorePipeRotationRound(
+  playerStates: Map<string, PipeRotationPlayerState>,
+  basePoints: number,
+  speedBonusMax: number,
+  winnerCount: number,
+): Map<string, number> {
+  return scoreRankedPuzzleRound(playerStates, basePoints, speedBonusMax, winnerCount);
+}
+
+export function scoreRushHourRound(
+  playerStates: Map<string, RushHourPlayerState>,
+  basePoints: number,
+  speedBonusMax: number,
+  winnerCount: number,
+): Map<string, number> {
+  return scoreRankedPuzzleRound(playerStates, basePoints, speedBonusMax, winnerCount);
+}
+
+function scoreRankedPuzzleRound<T extends { completedAt: number | null; rank: number | null }>(
+  playerStates: Map<string, T>,
   basePoints: number,
   speedBonusMax: number,
   winnerCount: number,

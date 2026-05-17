@@ -11,6 +11,8 @@ const ROUND_TYPE_LABELS: Record<string, string> = {
   speed_math: "Speed Math",
   fifteen: "Fifteen",
   flow_connect: "Flow Connect",
+  pipe_rotation: "Pipe Rotation",
+  rush_hour: "Rush Hour",
   pattern: "Multiple Choice",
   image: "Image Round",
 }
@@ -24,6 +26,8 @@ export function RoundIntro() {
   const typeLabel = round.typeLabel ?? ROUND_TYPE_LABELS[round.type] ?? round.type
   const isFifteen = round.type === "fifteen"
   const isFlowConnect = round.type === "flow_connect"
+  const isPipeRotation = round.type === "pipe_rotation"
+  const isRushHour = round.type === "rush_hour"
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -73,6 +77,31 @@ export function RoundIntro() {
               Drag from a dot to draw its path. Crossing another path will cut
               that path, and lifting your finger or mouse leaves the connection
               where it ends.
+            </p>
+          </div>
+        )}
+
+        {isPipeRotation && (
+          <div className="mx-auto max-w-lg space-y-2 text-muted-foreground animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <p className="text-base">
+              Rotate the pipe tiles until the source has a connected route to
+              every marked terminal.
+            </p>
+            <p className="text-sm">
+              Click or tap a tile to rotate it clockwise. The blue flow shows
+              which pipes are currently reachable from the source.
+            </p>
+          </div>
+        )}
+
+        {isRushHour && (
+          <div className="mx-auto max-w-lg space-y-2 text-muted-foreground animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <p className="text-base">
+              Slide the red car to the exit on the right side of the board.
+            </p>
+            <p className="text-sm">
+              Drag vehicles along their lane. Cars cannot turn, overlap, or
+              move through other vehicles.
             </p>
           </div>
         )}

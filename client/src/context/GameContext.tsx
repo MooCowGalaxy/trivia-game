@@ -18,6 +18,8 @@ export type GameStateName =
   | "SPEED_MATH_ACTIVE"
   | "FIFTEEN_ACTIVE"
   | "FLOW_CONNECT_ACTIVE"
+  | "PIPE_ROTATION_ACTIVE"
+  | "RUSH_HOUR_ACTIVE"
   | "FINALE_INTRO"
   | "FINALE_QUESTION"
   | "FINALE_REVEAL"
@@ -97,6 +99,53 @@ export interface FlowConnectState {
   totalPlayers: number
 }
 
+export interface PipeCoordinate {
+  row: number
+  col: number
+}
+
+export interface PipeTile {
+  row: number
+  col: number
+  initialMask: number
+}
+
+export interface PipeRotationState {
+  rows: number
+  cols: number
+  source: PipeCoordinate
+  terminals: PipeCoordinate[]
+  tiles: PipeTile[]
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export type RushHourOrientation = "H" | "V"
+
+export interface RushHourVehicle {
+  id: string
+  row: number
+  col: number
+  length: number
+  orientation: RushHourOrientation
+  isTarget?: boolean
+}
+
+export interface RushHourState {
+  size: number
+  targetId: string
+  exitRow: number
+  vehicles: RushHourVehicle[]
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+  optimalMoves: number
+  optimalVehicleMoves: number
+}
+
 export interface PublicGameState {
   gameId: string
   hostDiscordId: string
@@ -123,6 +172,8 @@ export interface PublicGameState {
   speedMathState: SpeedMathState | null
   fifteenState: FifteenState | null
   flowConnectState: FlowConnectState | null
+  pipeRotationState: PipeRotationState | null
+  rushHourState: RushHourState | null
 }
 
 export interface SubmissionCount {
@@ -170,6 +221,32 @@ export interface FlowConnectResult {
   reason?: string
 }
 
+export interface PipeRotationProgress {
+  playerId: string
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export interface PipeRotationResult {
+  completed: boolean
+  reason?: string
+}
+
+export interface RushHourProgress {
+  playerId: string
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export interface RushHourResult {
+  completed: boolean
+  reason?: string
+}
+
 export interface LeaderboardUpdate {
   previous: LeaderboardEntry[]
   current: LeaderboardEntry[]
@@ -186,6 +263,10 @@ export interface GameContextValue {
   fifteenResult: FifteenResult | null
   flowConnectProgress: FlowConnectProgress | null
   flowConnectResult: FlowConnectResult | null
+  pipeRotationProgress: PipeRotationProgress | null
+  pipeRotationResult: PipeRotationResult | null
+  rushHourProgress: RushHourProgress | null
+  rushHourResult: RushHourResult | null
   timerRemainingMs: number | null
   leaderboard: LeaderboardEntry[]
   leaderboardUpdate: LeaderboardUpdate | null
@@ -212,6 +293,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     useState<FlowConnectProgress | null>(null)
   const [flowConnectResult, setFlowConnectResult] =
     useState<FlowConnectResult | null>(null)
+  const [pipeRotationProgress, setPipeRotationProgress] =
+    useState<PipeRotationProgress | null>(null)
+  const [pipeRotationResult, setPipeRotationResult] =
+    useState<PipeRotationResult | null>(null)
+  const [rushHourProgress, setRushHourProgress] =
+    useState<RushHourProgress | null>(null)
+  const [rushHourResult, setRushHourResult] =
+    useState<RushHourResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
@@ -251,6 +340,30 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
         } else {
           setFlowConnectProgress(null)
           setFlowConnectResult(null)
+        }
+        if (state.pipeRotationState) {
+          setPipeRotationProgress({
+            playerId: "",
+            completed: state.pipeRotationState.completed,
+            completedCount: state.pipeRotationState.completedCount,
+            winnerCount: state.pipeRotationState.winnerCount,
+            totalPlayers: state.pipeRotationState.totalPlayers,
+          })
+        } else {
+          setPipeRotationProgress(null)
+          setPipeRotationResult(null)
+        }
+        if (state.rushHourState) {
+          setRushHourProgress({
+            playerId: "",
+            completed: state.rushHourState.completed,
+            completedCount: state.rushHourState.completedCount,
+            winnerCount: state.rushHourState.winnerCount,
+            totalPlayers: state.rushHourState.totalPlayers,
+          })
+        } else {
+          setRushHourProgress(null)
+          setRushHourResult(null)
         }
         // Clear leaderboard update when leaving reveal/results states
         // (so reconnecting users don't see stale animation data)
@@ -297,6 +410,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       setFlowConnectProgress(data)
     }
 
+    const handlePipeRotationProgress = (data: PipeRotationProgress) => {
+      setPipeRotationProgress(data)
+    }
+
+    const handleRushHourProgress = (data: RushHourProgress) => {
+      setRushHourProgress(data)
+    }
+
     const handleLeaderboardUpdate = (data: LeaderboardUpdate) => {
       setLeaderboard(data.current)
       setLeaderboardUpdate(data)
@@ -323,6 +444,14 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       setFlowConnectResult(data)
     }
 
+    const handlePipeRotationResult = (data: PipeRotationResult) => {
+      setPipeRotationResult(data)
+    }
+
+    const handleRushHourResult = (data: RushHourResult) => {
+      setRushHourResult(data)
+    }
+
     const handleConnect = () => {
       console.log("[socket] connected:", socket.id)
     }
@@ -337,11 +466,15 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     socket.on("game:speed_math_progress", handleSpeedMathProgress)
     socket.on("game:fifteen_progress", handleFifteenProgress)
     socket.on("game:flow_connect_progress", handleFlowConnectProgress)
+    socket.on("game:pipe_rotation_progress", handlePipeRotationProgress)
+    socket.on("game:rush_hour_progress", handleRushHourProgress)
     socket.on("game:leaderboard_update", handleLeaderboardUpdate)
     socket.on("game:players_sync", handlePlayersSync)
     socket.on("player:speed_math_result", handleSpeedMathResult)
     socket.on("player:fifteen_result", handleFifteenResult)
     socket.on("player:flow_connect_result", handleFlowConnectResult)
+    socket.on("player:pipe_rotation_result", handlePipeRotationResult)
+    socket.on("player:rush_hour_result", handleRushHourResult)
     socket.on("connect", handleConnect)
     socket.on("connect_error", handleConnectError)
 
@@ -370,11 +503,15 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("game:speed_math_progress", handleSpeedMathProgress)
       socket.off("game:fifteen_progress", handleFifteenProgress)
       socket.off("game:flow_connect_progress", handleFlowConnectProgress)
+      socket.off("game:pipe_rotation_progress", handlePipeRotationProgress)
+      socket.off("game:rush_hour_progress", handleRushHourProgress)
       socket.off("game:leaderboard_update", handleLeaderboardUpdate)
       socket.off("game:players_sync", handlePlayersSync)
       socket.off("player:speed_math_result", handleSpeedMathResult)
       socket.off("player:fifteen_result", handleFifteenResult)
       socket.off("player:flow_connect_result", handleFlowConnectResult)
+      socket.off("player:pipe_rotation_result", handlePipeRotationResult)
+      socket.off("player:rush_hour_result", handleRushHourResult)
       socket.disconnect()
     }
   }, [authenticated])
@@ -388,6 +525,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     fifteenResult,
     flowConnectProgress,
     flowConnectResult,
+    pipeRotationProgress,
+    pipeRotationResult,
+    rushHourProgress,
+    rushHourResult,
     timerRemainingMs,
     leaderboard,
     leaderboardUpdate,

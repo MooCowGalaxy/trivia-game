@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { GameEngine } from '../game/engine.js';
 import type { GameTimer } from '../game/timer.js';
 import type { FlowConnectSubmittedPath } from '../game/flowConnect.js';
+import type { RushHourMove } from '../game/rushHour.js';
 import { GameState } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
 
@@ -109,6 +110,44 @@ function scheduleFlowConnectProgressBroadcast(ioRef: Server, engineRef: GameEngi
   }, broadcastDebounceMs);
 }
 
+let pipeRotationProgressTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingPipeRotationProgress: { io: Server; engine: GameEngine; playerId: string; completed: boolean } | null = null;
+
+function schedulePipeRotationProgressBroadcast(ioRef: Server, engineRef: GameEngine, pid: string, completed: boolean): void {
+  pendingPipeRotationProgress = { io: ioRef, engine: engineRef, playerId: pid, completed };
+  if (pipeRotationProgressTimer) return;
+  pipeRotationProgressTimer = setTimeout(() => {
+    pipeRotationProgressTimer = null;
+    if (!pendingPipeRotationProgress) return;
+    const { io: sio, engine: eng, playerId: id, completed: comp } = pendingPipeRotationProgress;
+    pendingPipeRotationProgress = null;
+    sio.emit('game:pipe_rotation_progress', {
+      playerId: id,
+      completed: comp,
+      ...eng.getPipeRotationProgress(),
+    });
+  }, broadcastDebounceMs);
+}
+
+let rushHourProgressTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingRushHourProgress: { io: Server; engine: GameEngine; playerId: string; completed: boolean } | null = null;
+
+function scheduleRushHourProgressBroadcast(ioRef: Server, engineRef: GameEngine, pid: string, completed: boolean): void {
+  pendingRushHourProgress = { io: ioRef, engine: engineRef, playerId: pid, completed };
+  if (rushHourProgressTimer) return;
+  rushHourProgressTimer = setTimeout(() => {
+    rushHourProgressTimer = null;
+    if (!pendingRushHourProgress) return;
+    const { io: sio, engine: eng, playerId: id, completed: comp } = pendingRushHourProgress;
+    pendingRushHourProgress = null;
+    sio.emit('game:rush_hour_progress', {
+      playerId: id,
+      completed: comp,
+      ...eng.getRushHourProgress(),
+    });
+  }, broadcastDebounceMs);
+}
+
 export function registerPlayerHandlers(
   socket: Socket,
   io: Server,
@@ -125,6 +164,8 @@ export function registerPlayerHandlers(
   const speedMathLimit = createRateLimiter(30, 5000);    // 30 speed math answers per 5s
   const fifteenLimit = createRateLimiter(5, 5000);       // 5 solve submissions per 5s
   const flowConnectLimit = createRateLimiter(5, 5000);   // 5 solve submissions per 5s
+  const pipeRotationLimit = createRateLimiter(5, 5000);  // 5 solve submissions per 5s
+  const rushHourLimit = createRateLimiter(5, 5000);      // 5 solve submissions per 5s
   const joinLimit = createRateLimiter(3, 5000);         // 3 join/spectate per 5s
 
   // ── Answer submission ─────────────────────────────────────────────────────
@@ -267,6 +308,78 @@ export function registerPlayerHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('player:flow_connect_solve error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  // ── Pipe Rotation solve submission ───────────────────────────────────────
+
+  socket.on('player:pipe_rotation_solve', (data: { masks: number[] }, callback) => {
+    try {
+      if (!pipeRotationLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const result = engine.submitPipeRotationSolve(playerId, data.masks);
+
+      socket.emit('player:pipe_rotation_result', {
+        completed: result.accepted,
+        reason: result.reason,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ ok: result.accepted, reason: result.reason });
+      }
+
+      if (result.accepted) {
+        const base = engine.computeBroadcastBase(getQuestionImageData);
+        socket.emit('game:state_change', engine.getPlayerOverlay(playerId, base));
+        schedulePipeRotationProgressBroadcast(io, engine, playerId, true);
+
+        if (engine.shouldEndPipeRotationRound()) {
+          timer.forceExpire();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:pipe_rotation_solve error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  // ── Rush Hour solve submission ───────────────────────────────────────────
+
+  socket.on('player:rush_hour_solve', (data: { moves: RushHourMove[] }, callback) => {
+    try {
+      if (!rushHourLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const result = engine.submitRushHourSolve(playerId, data.moves);
+
+      socket.emit('player:rush_hour_result', {
+        completed: result.accepted,
+        reason: result.reason,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ ok: result.accepted, reason: result.reason });
+      }
+
+      if (result.accepted) {
+        const base = engine.computeBroadcastBase(getQuestionImageData);
+        socket.emit('game:state_change', engine.getPlayerOverlay(playerId, base));
+        scheduleRushHourProgressBroadcast(io, engine, playerId, true);
+
+        if (engine.shouldEndRushHourRound()) {
+          timer.forceExpire();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:rush_hour_solve error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });
