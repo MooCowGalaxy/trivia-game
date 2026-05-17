@@ -1,5 +1,5 @@
 {
-  "gameId": "fifteen",
+  "gameId": "puzzle",
   "settings": {
     "hostDiscordId": "594239049884237836",
     "finaleTopN": 3,
@@ -15,7 +15,7 @@
       "basePoints": 1000,
       "speedBonusMax": 500,
       "fifteenParams": {
-        "winnerCount": 1,
+        "winnerCount": 3,
         "scrambleMoves": 500
       }
     }
