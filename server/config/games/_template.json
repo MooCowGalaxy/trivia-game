@@ -63,6 +63,7 @@
         "cols": 6,
         "terminalCount": 3,
         "winnerCount": 3,
+        "requireFullSolve": false,
         "minDeadEnds": 4,
         "minBranches": 3,
         "minMisrotatedTiles": 18,

@@ -15,6 +15,7 @@ export interface PipeRotationGeneratorParams {
   rows: number;
   cols: number;
   terminalCount: number;
+  requireFullSolve?: boolean;
   minDeadEnds?: number;
   minBranches?: number;
   minMisrotatedTiles?: number;
@@ -158,6 +159,7 @@ export function verifyPipeRotationSolution(
   source: PipeCoordinate,
   terminals: PipeCoordinate[],
   masks: number[],
+  requireFullSolve = false,
 ): PipeRotationVerificationResult {
   if (!Array.isArray(masks) || masks.length !== rows * cols) {
     return { valid: false, reason: 'Invalid pipe board shape' };
@@ -175,6 +177,29 @@ export function verifyPipeRotationSolution(
   for (const terminal of terminals) {
     if (!reachable.has(coordKey(terminal))) {
       return { valid: false, reason: 'A terminal is not connected to the source' };
+    }
+  }
+
+  if (requireFullSolve) {
+    if (reachable.size !== rows * cols) {
+      return { valid: false, reason: 'Not every tile is connected to the source' };
+    }
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const mask = masks[toIndex(row, col, cols)]!;
+        for (const direction of DIRECTIONS) {
+          if ((mask & direction.bit) === 0) continue;
+          const next = { row: row + direction.dr, col: col + direction.dc };
+          if (!isInBounds(next, rows, cols)) {
+            return { valid: false, reason: 'A pipe points off the board' };
+          }
+          const nextMask = masks[toIndex(next.row, next.col, cols)]!;
+          if ((nextMask & direction.opposite) === 0) {
+            return { valid: false, reason: 'A pipe end is not connected' };
+          }
+        }
+      }
     }
   }
 

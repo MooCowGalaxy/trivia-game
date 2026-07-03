@@ -133,6 +133,7 @@ for (let i = 0; i < gameConfig.rounds.length; i++) {
       source: puzzle.source,
       terminals: puzzle.terminals,
       tiles: puzzle.tiles,
+      requireFullSolve: params.requireFullSolve ?? false,
     });
     console.log(
       `  Generated Pipe Rotation puzzle with ${puzzle.stats.deadEndCount} dead ends and rotation distance ${puzzle.stats.rotationDistance}`,

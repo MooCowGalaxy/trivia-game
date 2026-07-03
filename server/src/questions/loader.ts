@@ -51,6 +51,7 @@ const PipeRotationParamsSchema = z.object({
   cols: z.number().int().min(3),
   terminalCount: z.number().int().min(1),
   winnerCount: z.number().int(),
+  requireFullSolve: z.boolean().optional(),
   minDeadEnds: z.number().int().min(0).optional(),
   minBranches: z.number().int().min(0).optional(),
   minMisrotatedTiles: z.number().int().min(0).optional(),

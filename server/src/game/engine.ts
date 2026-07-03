@@ -105,6 +105,7 @@ export interface BroadcastBase {
     source: { row: number; col: number };
     terminals: Array<{ row: number; col: number }>;
     tiles: Array<{ row: number; col: number; initialMask: number }>;
+    requireFullSolve: boolean;
     completed: boolean;
     completedCount: number;
     winnerCount: number;
@@ -220,6 +221,7 @@ function clonePipeRotationPuzzle(puzzle: PipeRotationRoundState): PipeRotationRo
     source: { ...puzzle.source },
     terminals: puzzle.terminals.map((terminal) => ({ ...terminal })),
     tiles: puzzle.tiles.map((tile) => ({ ...tile })),
+    requireFullSolve: puzzle.requireFullSolve,
   };
 }
 
@@ -921,6 +923,7 @@ export class GameEngine {
       puzzle.source,
       puzzle.terminals,
       masks,
+      puzzle.requireFullSolve,
     );
     if (!verification.valid) {
       return {
@@ -2494,6 +2497,7 @@ export class GameEngine {
         col: tile.col,
         initialMask: tile.initialMask,
       })),
+      requireFullSolve: puzzle.requireFullSolve,
       completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
       completedCount: progress.completedCount,
       winnerCount: progress.winnerCount,

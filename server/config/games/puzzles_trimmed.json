@@ -7,71 +7,43 @@
   },
   "rounds": [
     {
-      "roundNumber": 3,
+      "roundNumber": 1,
       "type": "pipe_rotation",
-      "title": "Pipe Rotation",
-      "description": "Rotate the tiles to connect every terminal.",
-      "timerSeconds": 90,
-      "basePoints": 1000,
-      "speedBonusMax": 500,
+      "title": "Pipe Rotation (demo round, worth nothing)",
+      "description": "Rotate the tiles to connect every tile to the source.",
+      "timerSeconds": 300,
+      "basePoints": 0,
+      "speedBonusMax": 0,
       "pipeRotationParams": {
-        "rows": 6,
-        "cols": 6,
+        "rows": 5,
+        "cols": 5,
         "terminalCount": 2,
         "winnerCount": 0,
+        "requireFullSolve": true,
         "minDeadEnds": 5,
         "minBranches": 3,
         "minMisrotatedTiles": 18,
-        "minRotationDistance": 28
+        "minRotationDistance": 30
       }
     },
     {
       "roundNumber": 2,
-      "type": "flow_connect",
-      "title": "Flow Connect",
-      "description": "Connect matching dots and fill the whole board.",
-      "timerSeconds": 60,
+      "type": "pipe_rotation",
+      "title": "Pipe Rotation (real)",
+      "description": "Rotate the tiles to connect every tile to the source.",
+      "timerSeconds": 300,
       "basePoints": 1000,
-      "speedBonusMax": 500,
-      "flowConnectParams": {
-        "boardSize": 7,
-        "colorCount": 7,
-        "winnerCount": 0
-      }
-    },
-    {
-      "roundNumber": 1,
-      "type": "fifteen",
-      "title": "Fifteen",
-      "description": "Slide the tiles into order as fast as you can.",
-      "timerSeconds": 180,
-      "basePoints": 1000,
-      "speedBonusMax": 500,
-      "fifteenParams": {
-        "winnerCount": 0,
-        "scrambleMoves": 1000
-      }
-    },
-    {
-      "roundNumber": 4,
-      "type": "rush_hour",
-      "title": "Rush Hour",
-      "description": "Clear the lane and slide the red car through the exit.",
-      "timerSeconds": 120,
-      "basePoints": 1000,
-      "speedBonusMax": 500,
-      "rushHourParams": {
-        "size": 6,
-        "vehicleCount": 12,
-        "truckCount": 3,
-        "winnerCount": 0,
-        "scrambleMoves": 200,
-        "minOneCellMoves": 16,
-        "maxOneCellMoves": 80,
-        "minVehicleMoves": 10,
-        "maxVehicleMoves": 60,
-        "minExploredStates": 750,
-        "minTargetRowBlockers": 2
+      "speedBonusMax": 1000,
+      "pipeRotationParams": {
+        "rows": 9,
+        "cols": 9,
+        "terminalCount": 3,
+        "winnerCount": 1,
+        "requireFullSolve": true,
+        "minDeadEnds": 5,
+        "minBranches": 3,
+        "minMisrotatedTiles": 30,
+        "minRotationDistance": 50
       }
     }
   ]

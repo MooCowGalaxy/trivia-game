@@ -117,6 +117,7 @@ export interface PipeRotationState {
   source: PipeCoordinate
   terminals: PipeCoordinate[]
   tiles: PipeTile[]
+  requireFullSolve: boolean
   completed: boolean
   completedCount: number
   winnerCount: number

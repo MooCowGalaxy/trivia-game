@@ -47,6 +47,7 @@ export function PipeRotationActive() {
       source={pipeState.source}
       terminals={pipeState.terminals}
       tiles={pipeState.tiles}
+      requireFullSolve={pipeState.requireFullSolve}
       completed={pipeState.completed}
       completedCount={ctx?.pipeRotationProgress?.completedCount ?? pipeState.completedCount}
       canSubmit={!!user && gameState?.players.some((player) => player.id === user.discordId)}
@@ -62,6 +63,7 @@ interface PipeRotationPuzzleProps {
   source: PipeCoordinate
   terminals: PipeCoordinate[]
   tiles: PipeTile[]
+  requireFullSolve: boolean
   completed: boolean
   completedCount: number
   canSubmit: boolean
@@ -75,6 +77,7 @@ function PipeRotationPuzzle({
   source,
   terminals,
   tiles,
+  requireFullSolve,
   completed: serverCompleted,
   completedCount,
   canSubmit,
@@ -115,6 +118,7 @@ function PipeRotationPuzzle({
         masksRef.current,
         source,
         terminals,
+        requireFullSolve,
         animationsRef.current,
         now
       )
@@ -130,7 +134,7 @@ function PipeRotationPuzzle({
         animationFrameRef.current = null
       }
     },
-    [cols, rows, source, terminals]
+    [cols, requireFullSolve, rows, source, terminals]
   )
 
   useEffect(() => {
@@ -208,12 +212,12 @@ function PipeRotationPuzzle({
       masksRef.current = next
       setMasks(next)
       setError(null)
-      if (isPipeSolved(rows, cols, source, terminals, next)) {
+      if (isPipeSolved(rows, cols, source, terminals, next, requireFullSolve)) {
         submitSolve(next)
       }
       requestRender()
     },
-    [cols, completed, requestRender, rows, source, submitting, submitSolve, terminals]
+    [cols, completed, requestRender, requireFullSolve, rows, source, submitting, submitSolve, terminals]
   )
 
   const handlePointerDown = useCallback(
@@ -278,8 +282,9 @@ function PipeRotationPuzzle({
             </div>
 
             <p className="mx-auto max-w-md text-center text-sm text-muted-foreground">
-              Tap tiles to rotate them clockwise. Create a connected route from
-              the green source to every numbered terminal.
+              {requireFullSolve
+                ? "Tap tiles to rotate them clockwise. Connect every tile into one complete pipe network."
+                : "Tap tiles to rotate them clockwise. Create a connected route from the green source to every numbered terminal."}
             </p>
 
             <div className="min-h-8 text-center">
@@ -316,6 +321,7 @@ function drawPipeBoard(
   masks: number[],
   source: PipeCoordinate,
   terminals: PipeCoordinate[],
+  requireFullSolve: boolean,
   animations: Map<number, PipeRotationAnimation> = new Map(),
   now = performance.now()
 ): void {
@@ -391,18 +397,20 @@ function drawPipeBoard(
   }
 
   drawMarker(ctx, xOffset, yOffset, cell, source, "#22c55e", "S", true)
-  terminals.forEach((terminal, index) => {
-    drawMarker(
-      ctx,
-      xOffset,
-      yOffset,
-      cell,
-      terminal,
-      reachableCells.has(coordKey(terminal)) ? "#86efac" : "#facc15",
-      String(index + 1),
-      reachableCells.has(coordKey(terminal))
-    )
-  })
+  if (!requireFullSolve) {
+    terminals.forEach((terminal, index) => {
+      drawMarker(
+        ctx,
+        xOffset,
+        yOffset,
+        cell,
+        terminal,
+        reachableCells.has(coordKey(terminal)) ? "#86efac" : "#facc15",
+        String(index + 1),
+        reachableCells.has(coordKey(terminal))
+      )
+    })
+  }
 }
 
 function drawPipeSegments(
@@ -530,11 +538,43 @@ function isPipeSolved(
   cols: number,
   source: PipeCoordinate,
   terminals: PipeCoordinate[],
-  masks: number[]
+  masks: number[],
+  requireFullSolve: boolean
 ): boolean {
   if (masks.length !== rows * cols) return false
   const reachable = getReachablePipeCells(rows, cols, source, masks)
+  if (requireFullSolve && !isFullPipeSolve(rows, cols, masks, reachable)) {
+    return false
+  }
   return terminals.every((terminal) => reachable.has(coordKey(terminal)))
+}
+
+function isFullPipeSolve(
+  rows: number,
+  cols: number,
+  masks: number[],
+  reachable: Set<string>
+): boolean {
+  if (reachable.size !== rows * cols) return false
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const mask = masks[row * cols + col] ?? 0
+      for (const dir of PIPE_DIRECTIONS) {
+        if ((mask & dir.bit) === 0) continue
+        const next = { row: row + dir.dr, col: col + dir.dc }
+        if (next.row < 0 || next.col < 0 || next.row >= rows || next.col >= cols) {
+          return false
+        }
+        const nextMask = masks[next.row * cols + next.col] ?? 0
+        if ((nextMask & dir.opposite) === 0) {
+          return false
+        }
+      }
+    }
+  }
+
+  return true
 }
 
 function getReachablePipeCells(

@@ -7,6 +7,45 @@
   },
   "rounds": [
     {
+      "roundNumber": 3,
+      "type": "pipe_rotation",
+      "title": "Pipe Rotation",
+      "description": "Rotate the tiles to connect every terminal.",
+      "timerSeconds": 900,
+      "basePoints": 1250,
+      "speedBonusMax": 500,
+      "pipeRotationParams": {
+        "rows": 5,
+        "cols": 5,
+        "terminalCount": 2,
+        "winnerCount": 0,
+        "requireFullSolve": false,
+        "minDeadEnds": 5,
+        "minBranches": 3,
+        "minMisrotatedTiles": 18,
+        "minRotationDistance": 28
+      }
+    },
+    {
+      "roundNumber": 6,
+      "type": "nurikabe",
+      "title": "Nurikabe",
+      "description": "Fill black and white cells so each numbered white area has the right size.",
+      "timerSeconds": 1200,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "nurikabeParams": {
+        "rows": 7,
+        "cols": 7,
+        "winnerCount": 0,
+        "minWhiteRegions": 5,
+        "maxWhiteRegions": 7,
+        "minRegionSize": 2,
+        "maxRegionSize": 6,
+        "lockRatio": 0.14
+      }
+    },
+    {
       "roundNumber": 2,
       "type": "flow_connect",
       "title": "Flow Connect",
@@ -15,11 +54,12 @@
       "basePoints": 750,
       "speedBonusMax": 500,
       "flowConnectParams": {
-        "boardSize": 8,
-        "colorCount": 8,
+        "boardSize": 6,
+        "colorCount": 7,
         "winnerCount": 0
       }
-    },{
+    },
+    {
       "roundNumber": 1,
       "type": "fifteen",
       "title": "Fifteen",
@@ -41,8 +81,8 @@
       "basePoints": 1250,
       "speedBonusMax": 500,
       "rushHourParams": {
-        "size": 7,
-        "vehicleCount": 14,
+        "size": 6,
+        "vehicleCount": 12,
         "truckCount": 3,
         "winnerCount": 0,
         "scrambleMoves": 200,
@@ -52,25 +92,6 @@
         "maxVehicleMoves": 60,
         "minExploredStates": 750,
         "minTargetRowBlockers": 2
-      }
-    },
-    {
-      "roundNumber": 3,
-      "type": "pipe_rotation",
-      "title": "Pipe Rotation",
-      "description": "Rotate the tiles to connect every terminal.",
-      "timerSeconds": 90,
-      "basePoints": 1250,
-      "speedBonusMax": 500,
-      "pipeRotationParams": {
-        "rows": 7,
-        "cols": 7,
-        "terminalCount": 3,
-        "winnerCount": 0,
-        "minDeadEnds": 5,
-        "minBranches": 3,
-        "minMisrotatedTiles": 18,
-        "minRotationDistance": 28
       }
     }
   ]
