@@ -10,11 +10,19 @@ import { useAuth } from "@/hooks/useAuth"
 import { socket } from "@/socket"
 
 type AckResponse = { ok: boolean; reason?: string; error?: string }
+interface PipeRotationAnimation {
+  fromMask: number
+  fromAngle: number
+  toAngle: number
+  startedAt: number
+  durationMs: number
+}
 
 const NORTH = 1
 const EAST = 2
 const SOUTH = 4
 const WEST = 8
+const ROTATION_ANIMATION_MS = 150
 const PIPE_DIRECTIONS = [
   { bit: NORTH, opposite: SOUTH, dr: -1, dc: 0 },
   { bit: EAST, opposite: WEST, dr: 0, dc: 1 },
@@ -82,20 +90,81 @@ function PipeRotationPuzzle({
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const masksRef = useRef<number[]>(initialMasks)
+  const animationsRef = useRef<Map<number, PipeRotationAnimation>>(new Map())
+  const animationFrameRef = useRef<number | null>(null)
+  const renderBoardRef = useRef<(now?: number) => void>(() => {})
   const submittedKeyRef = useRef<string | null>(null)
   const completed = serverCompleted || submitted
 
+  const renderBoard = useCallback(
+    (now = performance.now()) => {
+      let hasActiveAnimation = false
+      for (const [index, animation] of animationsRef.current) {
+        if (now - animation.startedAt >= animation.durationMs) {
+          animationsRef.current.delete(index)
+        } else {
+          hasActiveAnimation = true
+        }
+      }
+
+      drawPipeBoard(
+        canvasRef.current,
+        rows,
+        cols,
+        masksRef.current,
+        source,
+        terminals,
+        animationsRef.current,
+        now
+      )
+
+      if (hasActiveAnimation) {
+        if (animationFrameRef.current === null) {
+          animationFrameRef.current = requestAnimationFrame((nextNow) => {
+            animationFrameRef.current = null
+            renderBoardRef.current(nextNow)
+          })
+        }
+      } else {
+        animationFrameRef.current = null
+      }
+    },
+    [cols, rows, source, terminals]
+  )
+
   useEffect(() => {
-    drawPipeBoard(canvasRef.current, rows, cols, masks, source, terminals)
-  }, [cols, masks, rows, source, terminals])
+    renderBoardRef.current = renderBoard
+  }, [renderBoard])
+
+  const requestRender = useCallback(() => {
+    if (animationFrameRef.current !== null) return
+    animationFrameRef.current = requestAnimationFrame((now) => {
+      animationFrameRef.current = null
+      renderBoard(now)
+    })
+  }, [renderBoard])
+
+  useEffect(() => {
+    masksRef.current = masks
+    renderBoard()
+  }, [masks, renderBoard])
 
   useEffect(() => {
     const handleResize = () => {
-      drawPipeBoard(canvasRef.current, rows, cols, masks, source, terminals)
+      renderBoard()
     }
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
-  }, [cols, masks, rows, source, terminals])
+  }, [renderBoard])
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [])
 
   const submitSolve = useCallback(
     (nextMasks: number[]) => {
@@ -122,17 +191,29 @@ function PipeRotationPuzzle({
     (coord: PipeCoordinate) => {
       if (completed || submitting) return
       const index = coord.row * cols + coord.col
-      setMasks((current) => {
-        const next = [...current]
-        next[index] = rotateMaskClockwise(next[index]!)
-        setError(null)
-        if (isPipeSolved(rows, cols, source, terminals, next)) {
-          submitSolve(next)
-        }
-        return next
+      const current = masksRef.current
+      const now = performance.now()
+      const existingAnimation = animationsRef.current.get(index)
+      const next = [...current]
+
+      animationsRef.current.set(index, {
+        fromMask: existingAnimation?.fromMask ?? current[index]!,
+        fromAngle: getPipeRotationAngle(existingAnimation, now),
+        toAngle: (existingAnimation?.toAngle ?? 0) + Math.PI / 2,
+        startedAt: now,
+        durationMs: ROTATION_ANIMATION_MS,
       })
+
+      next[index] = rotateMaskClockwise(next[index]!)
+      masksRef.current = next
+      setMasks(next)
+      setError(null)
+      if (isPipeSolved(rows, cols, source, terminals, next)) {
+        submitSolve(next)
+      }
+      requestRender()
     },
-    [cols, completed, rows, source, submitting, submitSolve, terminals]
+    [cols, completed, requestRender, rows, source, submitting, submitSolve, terminals]
   )
 
   const handlePointerDown = useCallback(
@@ -146,10 +227,13 @@ function PipeRotationPuzzle({
 
   const resetBoard = useCallback(() => {
     if (completed || submitting) return
+    animationsRef.current.clear()
+    masksRef.current = initialMasks
     setMasks(initialMasks)
     setError(null)
     submittedKeyRef.current = null
-  }, [completed, initialMasks, submitting])
+    requestRender()
+  }, [completed, initialMasks, requestRender, submitting])
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -231,7 +315,9 @@ function drawPipeBoard(
   cols: number,
   masks: number[],
   source: PipeCoordinate,
-  terminals: PipeCoordinate[]
+  terminals: PipeCoordinate[],
+  animations: Map<number, PipeRotationAnimation> = new Map(),
+  now = performance.now()
 ): void {
   if (!canvas) return
   const rect = canvas.getBoundingClientRect()
@@ -259,7 +345,9 @@ function drawPipeBoard(
     for (let col = 0; col < cols; col++) {
       const x = xOffset + col * cell
       const y = yOffset + row * cell
-      const mask = masks[row * cols + col] ?? 0
+      const index = row * cols + col
+      const mask = masks[index] ?? 0
+      const animation = animations.get(index)
 
       ctx.fillStyle = "#111827"
       ctx.strokeStyle = "rgba(148,163,184,0.2)"
@@ -268,7 +356,16 @@ function drawPipeBoard(
       ctx.fill()
       ctx.stroke()
 
-      drawPipeSegments(ctx, x, y, cell, pipeWidth, mask, false)
+      drawPipeSegments(
+        ctx,
+        x,
+        y,
+        cell,
+        pipeWidth,
+        animation?.fromMask ?? mask,
+        false,
+        getPipeRotationAngle(animation, now)
+      )
     }
   }
 
@@ -277,8 +374,19 @@ function drawPipeBoard(
       if (!reachableCells.has(coordKey({ row, col }))) continue
       const x = xOffset + col * cell
       const y = yOffset + row * cell
-      const mask = masks[row * cols + col] ?? 0
-      drawPipeSegments(ctx, x, y, cell, pipeWidth * 0.58, mask, true)
+      const index = row * cols + col
+      const mask = masks[index] ?? 0
+      const animation = animations.get(index)
+      drawPipeSegments(
+        ctx,
+        x,
+        y,
+        cell,
+        pipeWidth * 0.58,
+        animation?.fromMask ?? mask,
+        true,
+        getPipeRotationAngle(animation, now)
+      )
     }
   }
 
@@ -304,7 +412,8 @@ function drawPipeSegments(
   cell: number,
   pipeWidth: number,
   mask: number,
-  flowing: boolean
+  flowing: boolean,
+  rotationAngle = 0
 ): void {
   const cx = x + cell / 2
   const cy = y + cell / 2
@@ -312,6 +421,11 @@ function drawPipeSegments(
   ctx.beginPath()
   ctx.rect(x, y, cell, cell)
   ctx.clip()
+  if (rotationAngle !== 0) {
+    ctx.translate(cx, cy)
+    ctx.rotate(rotationAngle)
+    ctx.translate(-cx, -cy)
+  }
 
   if (flowing) {
     ctx.strokeStyle = "#7dd3fc"
@@ -344,6 +458,19 @@ function drawPipeSegments(
   }
 
   ctx.restore()
+}
+
+function getPipeRotationAngle(
+  animation: PipeRotationAnimation | undefined,
+  now: number
+): number {
+  if (!animation) return 0
+  const progress = Math.min(1, Math.max(0, (now - animation.startedAt) / animation.durationMs))
+  return animation.fromAngle + easeOutCubic(progress) * (animation.toAngle - animation.fromAngle)
+}
+
+function easeOutCubic(value: number): number {
+  return 1 - Math.pow(1 - value, 3)
 }
 
 function drawMarker(

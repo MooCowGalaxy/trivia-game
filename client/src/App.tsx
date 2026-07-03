@@ -26,6 +26,7 @@ import { FifteenActive } from "@/views/FifteenActive"
 import { FlowConnectActive } from "@/views/FlowConnectActive"
 import { PipeRotationActive } from "@/views/PipeRotationActive"
 import { RushHourActive } from "@/views/RushHourActive"
+import { NurikabeActive } from "@/views/NurikabeActive"
 import { FinaleIntro } from "@/views/FinaleIntro"
 import { FinaleQuestion } from "@/views/FinaleQuestion"
 import { GameOver } from "@/views/GameOver"
@@ -43,6 +44,7 @@ const STATE_VIEWS: Record<GameStateName, React.FC> = {
   FLOW_CONNECT_ACTIVE: FlowConnectActive,
   PIPE_ROTATION_ACTIVE: PipeRotationActive,
   RUSH_HOUR_ACTIVE: RushHourActive,
+  NURIKABE_ACTIVE: NurikabeActive,
   FINALE_INTRO: FinaleIntro,
   FINALE_QUESTION: FinaleQuestion,
   FINALE_REVEAL: QuestionReveal,
@@ -50,14 +52,27 @@ const STATE_VIEWS: Record<GameStateName, React.FC> = {
 }
 
 function LoginPage() {
-  const { login, devLogin, guestLogin, devMode } = useAuth()
-  const [devUsername, setDevUsername] = useState("")
-  const [devIsHost, setDevIsHost] = useState(false)
+  const { usernameLogin, guestLogin } = useAuth()
+  const [username, setUsername] = useState("")
+  const [hostCode, setHostCode] = useState("")
+  const [confirmed, setConfirmed] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleDevLogin = (e: React.FormEvent) => {
+  const showHostLogin = new URLSearchParams(window.location.search).get("host") === "1"
+  const normalizedUsername = username.trim().toLowerCase()
+  const usernameError = getUsernameError(normalizedUsername)
+
+  const handleUsernameLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (devUsername.trim()) {
-      devLogin(devUsername.trim(), devIsHost)
+    if (usernameError || !confirmed || submitting) return
+
+    setError(null)
+    setSubmitting(true)
+    const result = await usernameLogin(normalizedUsername, showHostLogin ? hostCode : "")
+    setSubmitting(false)
+    if (!result.ok) {
+      setError(result.error ?? "Login failed")
     }
   }
 
@@ -70,37 +85,58 @@ function LoginPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {devMode ? (
-            <form onSubmit={handleDevLogin} className="flex flex-col gap-3">
+          <form onSubmit={handleUsernameLogin} className="flex flex-col gap-3">
+            <div className="space-y-1.5">
               <Input
-                placeholder="Username"
-                value={devUsername}
-                onChange={(e) => setDevUsername(e.target.value)}
+                placeholder="Discord username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="username"
+                autoCorrect="off"
+                aria-invalid={!!usernameError && username.trim().length > 0}
                 autoFocus
               />
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={devIsHost}
-                  onChange={(e) => setDevIsHost(e.target.checked)}
-                  className="rounded"
-                />
-                Join as host
-              </label>
-              <Button type="submit" className="w-full" disabled={!devUsername.trim()}>
-                Join
-              </Button>
-            </form>
-          ) : (
-            <>
-              <Button className="w-full" onClick={login}>
-                Join with Discord
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Sign in with Discord to join the game
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Use the Discord username you would claim with, not your display name. Winners may be asked to send a private code from that same account.
               </p>
-            </>
-          )}
+              {usernameError && username.trim().length > 0 && (
+                <p className="text-xs text-red-400">{usernameError}</p>
+              )}
+            </div>
+            {showHostLogin && (
+              <Input
+                placeholder="Host code"
+                value={hostCode}
+                onChange={(e) => setHostCode(e.target.value)}
+                type="password"
+                autoComplete="off"
+              />
+            )}
+            <label className="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+                className="mt-0.5 rounded"
+              />
+              <span>
+                I’ll use this same Discord username if I need to claim a win.
+              </span>
+            </label>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!!usernameError || !confirmed || submitting}
+            >
+              {submitting ? "Joining..." : "Join Game"}
+            </Button>
+            {error && (
+              <p className="text-sm text-red-400 bg-red-400/10 rounded-md px-3 py-2">
+                {error}
+              </p>
+            )}
+          </form>
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -116,6 +152,20 @@ function LoginPage() {
       </Card>
     </div>
   )
+}
+
+function getUsernameError(username: string): string | null {
+  if (!username) return "Enter your Discord username."
+  if (username.length < 2 || username.length > 32) {
+    return "Use 2 to 32 characters."
+  }
+  if (!/^[a-z0-9._]+$/.test(username)) {
+    return "Use lowercase letters, numbers, periods, and underscores."
+  }
+  if (username.startsWith(".") || username.endsWith(".") || username.includes("..")) {
+    return "Periods cannot appear at the beginning, end, or twice in a row."
+  }
+  return null
 }
 
 function LoadingScreen() {

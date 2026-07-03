@@ -1,11 +1,17 @@
 import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
 import type { Socket } from "socket.io";
+import {
+  isDiscordUsernameBanned,
+  isPlayerIdentityRevoked,
+} from "../auth/username.js";
 
 export interface JwtPayload {
   discordId: string;
   username: string;
+  normalizedUsername?: string;
   avatarUrl: string;
+  isHost?: boolean;
   isGuest?: boolean;
 }
 
@@ -50,7 +56,17 @@ export function verifyToken(token: string): JwtPayload {
   const secret = getJwtSecret();
   const decoded = jwt.verify(token, secret);
   // jwt.verify returns string | JwtPayload — we always sign objects so cast appropriately
-  return decoded as unknown as JwtPayload;
+  const payload = decoded as unknown as JwtPayload;
+  if (isPlayerIdentityRevoked(payload.discordId)) {
+    throw new Error("Identity has been revoked");
+  }
+  if (
+    payload.normalizedUsername &&
+    isDiscordUsernameBanned(payload.normalizedUsername)
+  ) {
+    throw new Error("Username has been blocked");
+  }
+  return payload;
 }
 
 /**

@@ -4,6 +4,24 @@ import type { GameTimer } from '../game/timer.js';
 import { GameState } from '../game/types.js';
 import type { TransitionAction, LeaderboardEntry } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
+import {
+  banDiscordUsername,
+  revokePlayerIdentity,
+} from '../auth/username.js';
+
+function createRateLimiter(maxPerWindow: number, windowMs: number) {
+  let count = 0;
+  let windowStart = Date.now();
+  return function check(): boolean {
+    const now = Date.now();
+    if (now - windowStart >= windowMs) {
+      count = 0;
+      windowStart = now;
+    }
+    count++;
+    return count <= maxPerWindow;
+  };
+}
 
 export function registerHostHandlers(
   socket: Socket,
@@ -13,6 +31,7 @@ export function registerHostHandlers(
   getQuestionImageData: (questionId: string) => string | null,
 ): void {
   const user = socket.data.user as JwtPayload;
+  const verifyCodeLimit = createRateLimiter(10, 60_000);
 
   function assertHost(): void {
     if (user.discordId !== engine.getFullState().config.settings.hostDiscordId) {
@@ -29,9 +48,11 @@ export function registerHostHandlers(
     GameState.FLOW_CONNECT_ACTIVE,
     GameState.PIPE_ROTATION_ACTIVE,
     GameState.RUSH_HOUR_ACTIVE,
+    GameState.NURIKABE_ACTIVE,
     GameState.FINALE_QUESTION,
     GameState.FINALE_REVEAL,
     GameState.ROUND_RESULTS,
+    GameState.GAME_OVER,
   ]);
 
   function broadcastState(): void {
@@ -56,6 +77,15 @@ export function registerHostHandlers(
     io.emit('game:leaderboard_update', { previous, current });
   }
 
+  function disconnectPlayerSockets(playerId: string): void {
+    for (const [, s] of io.sockets.sockets) {
+      const u = s.data.user as JwtPayload | undefined;
+      if (u?.discordId === playerId) {
+        s.disconnect(true);
+      }
+    }
+  }
+
   function startTimerForState(): void {
     const state = engine.getGameState();
     let durationMs: number;
@@ -68,6 +98,7 @@ export function registerHostHandlers(
       state === GameState.FLOW_CONNECT_ACTIVE ||
       state === GameState.PIPE_ROTATION_ACTIVE ||
       state === GameState.RUSH_HOUR_ACTIVE ||
+      state === GameState.NURIKABE_ACTIVE ||
       state === GameState.QUESTION_ACTIVE
     ) {
       durationMs = engine.getCurrentRoundConfig().timerSeconds * 1000;
@@ -91,7 +122,8 @@ export function registerHostHandlers(
           prevState === GameState.FIFTEEN_ACTIVE ||
           prevState === GameState.FLOW_CONNECT_ACTIVE ||
           prevState === GameState.PIPE_ROTATION_ACTIVE ||
-          prevState === GameState.RUSH_HOUR_ACTIVE;
+          prevState === GameState.RUSH_HOUR_ACTIVE ||
+          prevState === GameState.NURIKABE_ACTIVE;
         const previousLeaderboard = willScore ? engine.getLeaderboard() : null;
 
         engine.endTimer();
@@ -110,6 +142,7 @@ export function registerHostHandlers(
           newState === GameState.FLOW_CONNECT_ACTIVE ||
           newState === GameState.PIPE_ROTATION_ACTIVE ||
           newState === GameState.RUSH_HOUR_ACTIVE ||
+          newState === GameState.NURIKABE_ACTIVE ||
           newState === GameState.FINALE_QUESTION
         ) {
           startTimerForState();
@@ -135,6 +168,7 @@ export function registerHostHandlers(
       newState === GameState.FLOW_CONNECT_ACTIVE ||
       newState === GameState.PIPE_ROTATION_ACTIVE ||
       newState === GameState.RUSH_HOUR_ACTIVE ||
+      newState === GameState.NURIKABE_ACTIVE ||
       newState === GameState.FINALE_QUESTION
     ) {
       startTimerForState();
@@ -220,6 +254,68 @@ export function registerHostHandlers(
     }
   });
 
+  socket.on('host:kick_player', (data: { playerId?: string; banUsername?: boolean }, callback) => {
+    try {
+      assertHost();
+      const playerId = typeof data?.playerId === 'string' ? data.playerId : '';
+      if (!playerId) {
+        throw new Error('Missing playerId');
+      }
+
+      const previousLeaderboard = engine.getLeaderboard();
+      const result = engine.kickPlayer(playerId);
+      if (!result.ok || !result.player) {
+        throw new Error(result.reason ?? 'Failed to kick player');
+      }
+
+      if (data.banUsername) {
+        banDiscordUsername(result.player.username);
+      }
+      revokePlayerIdentity(playerId);
+      disconnectPlayerSockets(playerId);
+
+      emitLeaderboardUpdate(previousLeaderboard, engine.getLeaderboard());
+      broadcastState();
+
+      if (typeof callback === 'function') {
+        callback({
+          ok: true,
+          username: result.player.username,
+          banned: !!data.banUsername,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:kick_player error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:verify_winner_code', (data: { username?: string; code?: string }, callback) => {
+    try {
+      assertHost();
+      if (!verifyCodeLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const username = typeof data?.username === 'string' ? data.username : '';
+      const code = typeof data?.code === 'string' ? data.code : '';
+      if (!username.trim() || !code.trim()) {
+        throw new Error('Username and code are required');
+      }
+
+      const result = engine.verifyWinnerCode(username, code);
+      if (typeof callback === 'function') {
+        callback({ ok: true, ...result });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:verify_winner_code error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
   socket.on('host:end_fifteen_round', (_data, callback) => {
     try {
       assertHost();
@@ -276,6 +372,21 @@ export function registerHostHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('host:end_rush_hour_round error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  socket.on('host:end_nurikabe_round', (_data, callback) => {
+    try {
+      assertHost();
+      if (engine.getGameState() !== GameState.NURIKABE_ACTIVE) {
+        throw new Error('Nurikabe round is not active');
+      }
+      timer.forceExpire();
+      if (typeof callback === 'function') callback({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('host:end_nurikabe_round error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

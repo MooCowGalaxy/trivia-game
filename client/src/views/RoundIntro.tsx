@@ -13,6 +13,7 @@ const ROUND_TYPE_LABELS: Record<string, string> = {
   flow_connect: "Flow Connect",
   pipe_rotation: "Pipe Rotation",
   rush_hour: "Rush Hour",
+  nurikabe: "Nurikabe",
   pattern: "Multiple Choice",
   image: "Image Round",
 }
@@ -28,6 +29,7 @@ export function RoundIntro() {
   const isFlowConnect = round.type === "flow_connect"
   const isPipeRotation = round.type === "pipe_rotation"
   const isRushHour = round.type === "rush_hour"
+  const isNurikabe = round.type === "nurikabe"
 
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -102,6 +104,19 @@ export function RoundIntro() {
             <p className="text-sm">
               Drag vehicles along their lane. Cars cannot turn, overlap, or
               move through other vehicles.
+            </p>
+          </div>
+        )}
+
+        {isNurikabe && (
+          <div className="mx-auto max-w-lg space-y-2 text-muted-foreground animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <p className="text-base">
+              Fill every square as either black or white while matching each
+              numbered white area.
+            </p>
+            <p className="text-sm">
+              Click a tile to cycle it between Black, White, and Blank. Clues
+              and locked cells cannot be modified.
             </p>
           </div>
         )}

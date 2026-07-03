@@ -5,9 +5,10 @@ export const socket = io({
   autoConnect: false,
   transports: ["websocket"],
   auth: (cb) => {
-    const devToken = sessionStorage.getItem("devToken")
-    console.log("[socket] auth callback, devToken present:", !!devToken)
-    cb(devToken ? { token: devToken } : {})
+    const authToken =
+      sessionStorage.getItem("authToken") ?? sessionStorage.getItem("devToken")
+    console.log("[socket] auth callback, authToken present:", !!authToken)
+    cb(authToken ? { token: authToken } : {})
   },
 })
 

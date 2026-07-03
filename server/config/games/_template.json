@@ -25,6 +25,93 @@
     },
     {
       "roundNumber": 2,
+      "type": "fifteen",
+      "title": "Fifteen",
+      "description": "Slide the tiles into order as fast as you can.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "fifteenParams": {
+        "winnerCount": 3,
+        "scrambleMoves": 120
+      }
+    },
+    {
+      "roundNumber": 3,
+      "type": "flow_connect",
+      "title": "Flow Connect",
+      "description": "Connect matching dots and fill the whole board.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "flowConnectParams": {
+        "boardSize": 5,
+        "colorCount": 5,
+        "winnerCount": 3
+      }
+    },
+    {
+      "roundNumber": 4,
+      "type": "pipe_rotation",
+      "title": "Pipe Rotation",
+      "description": "Rotate the tiles to connect every terminal.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "pipeRotationParams": {
+        "rows": 6,
+        "cols": 6,
+        "terminalCount": 3,
+        "winnerCount": 3,
+        "minDeadEnds": 4,
+        "minBranches": 3,
+        "minMisrotatedTiles": 18,
+        "minRotationDistance": 28
+      }
+    },
+    {
+      "roundNumber": 5,
+      "type": "rush_hour",
+      "title": "Rush Hour",
+      "description": "Clear the lane and slide the red car through the exit.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "rushHourParams": {
+        "size": 6,
+        "vehicleCount": 12,
+        "truckCount": 3,
+        "winnerCount": 3,
+        "scrambleMoves": 140,
+        "minOneCellMoves": 16,
+        "maxOneCellMoves": 70,
+        "minVehicleMoves": 10,
+        "maxVehicleMoves": 45,
+        "minExploredStates": 500,
+        "minTargetRowBlockers": 2
+      }
+    },
+    {
+      "roundNumber": 6,
+      "type": "nurikabe",
+      "title": "Nurikabe",
+      "description": "Fill black and white cells so each numbered white area has the right size.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "nurikabeParams": {
+        "rows": 6,
+        "cols": 6,
+        "winnerCount": 3,
+        "minWhiteRegions": 5,
+        "maxWhiteRegions": 7,
+        "minRegionSize": 2,
+        "maxRegionSize": 6,
+        "lockRatio": 0.14
+      }
+    },
+    {
+      "roundNumber": 7,
       "type": "pattern",
       "title": "Pattern Recognition",
       "description": "Spot the pattern and pick the right answer.",
@@ -85,7 +172,7 @@
       ]
     },
     {
-      "roundNumber": 3,
+      "roundNumber": 8,
       "type": "visual_spatial",
       "title": "Visual Spatial",
       "description": "Count, estimate, and think spatially.",
@@ -126,7 +213,7 @@
       ]
     },
     {
-      "roundNumber": 4,
+      "roundNumber": 9,
       "type": "mixed_logic_fermi",
       "title": "Logic & Estimation",
       "description": "A mix of logic puzzles and Fermi estimation.",

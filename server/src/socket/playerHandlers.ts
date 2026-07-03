@@ -3,6 +3,7 @@ import type { GameEngine } from '../game/engine.js';
 import type { GameTimer } from '../game/timer.js';
 import type { FlowConnectSubmittedPath } from '../game/flowConnect.js';
 import type { RushHourMove } from '../game/rushHour.js';
+import type { RegionSizeColor } from '../game/regionSize.js';
 import { GameState } from '../game/types.js';
 import type { JwtPayload } from '../middleware/authMiddleware.js';
 
@@ -148,6 +149,25 @@ function scheduleRushHourProgressBroadcast(ioRef: Server, engineRef: GameEngine,
   }, broadcastDebounceMs);
 }
 
+let nurikabeProgressTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingNurikabeProgress: { io: Server; engine: GameEngine; playerId: string; completed: boolean } | null = null;
+
+function scheduleNurikabeProgressBroadcast(ioRef: Server, engineRef: GameEngine, pid: string, completed: boolean): void {
+  pendingNurikabeProgress = { io: ioRef, engine: engineRef, playerId: pid, completed };
+  if (nurikabeProgressTimer) return;
+  nurikabeProgressTimer = setTimeout(() => {
+    nurikabeProgressTimer = null;
+    if (!pendingNurikabeProgress) return;
+    const { io: sio, engine: eng, playerId: id, completed: comp } = pendingNurikabeProgress;
+    pendingNurikabeProgress = null;
+    sio.emit('game:nurikabe_progress', {
+      playerId: id,
+      completed: comp,
+      ...eng.getNurikabeProgress(),
+    });
+  }, broadcastDebounceMs);
+}
+
 export function registerPlayerHandlers(
   socket: Socket,
   io: Server,
@@ -166,6 +186,7 @@ export function registerPlayerHandlers(
   const flowConnectLimit = createRateLimiter(5, 5000);   // 5 solve submissions per 5s
   const pipeRotationLimit = createRateLimiter(5, 5000);  // 5 solve submissions per 5s
   const rushHourLimit = createRateLimiter(5, 5000);      // 5 solve submissions per 5s
+  const nurikabeLimit = createRateLimiter(5, 5000);      // 5 solve submissions per 5s
   const joinLimit = createRateLimiter(3, 5000);         // 3 join/spectate per 5s
 
   // ── Answer submission ─────────────────────────────────────────────────────
@@ -380,6 +401,42 @@ export function registerPlayerHandlers(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('player:rush_hour_solve error:', message);
+      if (typeof callback === 'function') callback({ ok: false, error: message });
+    }
+  });
+
+  // ── Nurikabe solve submission ───────────────────────────────────────────
+
+  socket.on('player:nurikabe_solve', (data: { board: RegionSizeColor[][] }, callback) => {
+    try {
+      if (!nurikabeLimit()) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limited' });
+        return;
+      }
+
+      const result = engine.submitNurikabeSolve(playerId, data.board);
+
+      socket.emit('player:nurikabe_result', {
+        completed: result.accepted,
+        reason: result.reason,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ ok: result.accepted, reason: result.reason });
+      }
+
+      if (result.accepted) {
+        const base = engine.computeBroadcastBase(getQuestionImageData);
+        socket.emit('game:state_change', engine.getPlayerOverlay(playerId, base));
+        scheduleNurikabeProgressBroadcast(io, engine, playerId, true);
+
+        if (engine.shouldEndNurikabeRound()) {
+          timer.forceExpire();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('player:nurikabe_solve error:', message);
       if (typeof callback === 'function') callback({ ok: false, error: message });
     }
   });

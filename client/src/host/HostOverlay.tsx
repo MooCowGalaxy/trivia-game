@@ -36,7 +36,7 @@ export function HostOverlay() {
           "w-80 rounded-xl border border-border backdrop-blur-xl bg-card/80 p-4 shadow-xl transition-all duration-300",
           collapsed
             ? "max-h-0 opacity-0 overflow-hidden p-0 border-0"
-            : "max-h-[80vh] opacity-100 overflow-auto"
+            : "max-h-[40vh] opacity-100 overflow-auto"
         )}
       >
         <HostControls />

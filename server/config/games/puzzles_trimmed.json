@@ -1,0 +1,78 @@
+{
+  "gameId": "puzzles",
+  "settings": {
+    "hostDiscordId": "594239049884237836",
+    "finaleTopN": 3,
+    "finaleWinCondition": 3
+  },
+  "rounds": [
+    {
+      "roundNumber": 3,
+      "type": "pipe_rotation",
+      "title": "Pipe Rotation",
+      "description": "Rotate the tiles to connect every terminal.",
+      "timerSeconds": 90,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "pipeRotationParams": {
+        "rows": 6,
+        "cols": 6,
+        "terminalCount": 2,
+        "winnerCount": 0,
+        "minDeadEnds": 5,
+        "minBranches": 3,
+        "minMisrotatedTiles": 18,
+        "minRotationDistance": 28
+      }
+    },
+    {
+      "roundNumber": 2,
+      "type": "flow_connect",
+      "title": "Flow Connect",
+      "description": "Connect matching dots and fill the whole board.",
+      "timerSeconds": 60,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "flowConnectParams": {
+        "boardSize": 7,
+        "colorCount": 7,
+        "winnerCount": 0
+      }
+    },
+    {
+      "roundNumber": 1,
+      "type": "fifteen",
+      "title": "Fifteen",
+      "description": "Slide the tiles into order as fast as you can.",
+      "timerSeconds": 180,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "fifteenParams": {
+        "winnerCount": 0,
+        "scrambleMoves": 1000
+      }
+    },
+    {
+      "roundNumber": 4,
+      "type": "rush_hour",
+      "title": "Rush Hour",
+      "description": "Clear the lane and slide the red car through the exit.",
+      "timerSeconds": 120,
+      "basePoints": 1000,
+      "speedBonusMax": 500,
+      "rushHourParams": {
+        "size": 6,
+        "vehicleCount": 12,
+        "truckCount": 3,
+        "winnerCount": 0,
+        "scrambleMoves": 200,
+        "minOneCellMoves": 16,
+        "maxOneCellMoves": 80,
+        "minVehicleMoves": 10,
+        "maxVehicleMoves": 60,
+        "minExploredStates": 750,
+        "minTargetRowBlockers": 2
+      }
+    }
+  ]
+}

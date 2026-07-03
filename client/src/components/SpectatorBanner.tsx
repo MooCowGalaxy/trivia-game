@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { socket } from "@/socket"
 
 export function SpectatorBanner() {
-  const { user, login, devMode } = useAuth()
+  const { user } = useAuth()
   const { gameState } = useGameState()
 
   if (!user || !gameState) return null
@@ -14,13 +14,9 @@ export function SpectatorBanner() {
 
   const handleLogin = () => {
     // Clear guest token so the auth flow starts fresh
+    sessionStorage.removeItem("authToken")
     sessionStorage.removeItem("devToken")
-    if (devMode) {
-      // In dev mode, reload so they see the login form
-      window.location.reload()
-    } else {
-      login()
-    }
+    window.location.reload()
   }
 
   const handleJoinGame = () => {

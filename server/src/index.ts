@@ -6,7 +6,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { createAuthRouter } from './auth/discord.js';
+import { createAuthRouter } from './auth/username.js';
 import { authenticateSocket } from './middleware/authMiddleware.js';
 import type { JwtPayload } from './middleware/authMiddleware.js';
 import { loadGameConfig } from './questions/loader.js';
@@ -16,11 +16,12 @@ import { renderMathExpression } from './questions/renderer.js';
 import { GameEngine } from './game/engine.js';
 import { GameTimer } from './game/timer.js';
 import { GameState } from './game/types.js';
-import type { FlowConnectRoundState, GeneratedQuestion, PipeRotationRoundState, RushHourRoundState } from './game/types.js';
+import type { FlowConnectRoundState, GeneratedQuestion, NurikabeRoundState, PipeRotationRoundState, RushHourRoundState } from './game/types.js';
 import { generateFifteenBoard } from './game/fifteen.js';
 import { generateFlowConnectPuzzle } from './game/flowConnect.js';
 import { generatePipeRotationPuzzle } from './game/pipeRotation.js';
 import { generateRushHourPuzzle } from './game/rushHour.js';
+import { generateRegionSizePuzzle } from './game/regionSize.js';
 import { registerHostHandlers } from './socket/hostHandlers.js';
 import { registerPlayerHandlers, setBroadcastDebounceMs } from './socket/playerHandlers.js';
 
@@ -92,6 +93,7 @@ const generatedFifteenBoardsMap = new Map<number, number[]>();
 const generatedFlowConnectPuzzlesMap = new Map<number, FlowConnectRoundState>();
 const generatedPipeRotationPuzzlesMap = new Map<number, PipeRotationRoundState>();
 const generatedRushHourPuzzlesMap = new Map<number, RushHourRoundState>();
+const generatedNurikabePuzzlesMap = new Map<number, NurikabeRoundState>();
 
 for (let i = 0; i < gameConfig.rounds.length; i++) {
   const round = gameConfig.rounds[i]!;
@@ -159,6 +161,28 @@ for (let i = 0; i < gameConfig.rounds.length; i++) {
       `  Generated Rush Hour puzzle with ${puzzle.optimalMoves} one-cell moves and ${puzzle.optimalVehicleMoves} vehicle moves`,
     );
   }
+
+  if (round.type === 'nurikabe') {
+    const params = round.nurikabeParams;
+    if (!params) {
+      throw new Error(`Nurikabe round ${round.roundNumber} requires nurikabeParams`);
+    }
+    console.log(
+      `Generating Nurikabe puzzle for round ${round.roundNumber} (${params.rows}x${params.cols})...`,
+    );
+    const puzzle = generateRegionSizePuzzle(params);
+    generatedNurikabePuzzlesMap.set(i, {
+      rows: puzzle.rows,
+      cols: puzzle.cols,
+      solution: puzzle.solution,
+      initial: puzzle.initial,
+      clues: puzzle.clues,
+      lockedCells: puzzle.lockedCells,
+    });
+    console.log(
+      `  Generated Nurikabe puzzle with ${puzzle.stats.clueCount} clues and ${puzzle.stats.lockedCellCount} locked cells`,
+    );
+  }
 }
 
 // ── Create game engine and timer ──────────────────────────────────────────────
@@ -170,6 +194,7 @@ const engine = new GameEngine(
   generatedFlowConnectPuzzlesMap,
   generatedPipeRotationPuzzlesMap,
   generatedRushHourPuzzlesMap,
+  generatedNurikabePuzzlesMap,
 );
 const timer = new GameTimer();
 
@@ -261,8 +286,11 @@ const authLimiter = rateLimit({
 });
 
 // Mount auth routes
-const authRouter = createAuthRouter((devHostId) => {
-  gameConfig.settings.hostDiscordId = devHostId;
+const authRouter = createAuthRouter({
+  onHostLogin: (hostId) => {
+    gameConfig.settings.hostDiscordId = hostId;
+  },
+  isUsernameInUse: (normalizedUsername) => engine.isUsernameInUse(normalizedUsername),
 });
 // In dev mode, skip rate limiting on /auth/dev so load tests can create many tokens
 const isDevMode = process.env.DEV_MODE === 'true';
@@ -376,6 +404,9 @@ io.on('connection', (socket) => {
       socket.emit('game:state_change', engine.getPlayerOverlay(user.discordId, base));
     } catch (err) {
       console.error(`  Failed to add player ${user.username}:`, err);
+      const message = err instanceof Error ? err.message : 'Failed to join game';
+      socket.emit('auth:error', { error: message });
+      socket.disconnect(true);
     }
   } else {
     // Game has left lobby — connect as spectator (they can join via player:join_game)

@@ -9,7 +9,9 @@ import {
 export interface AuthUser {
   discordId: string
   username: string
+  normalizedUsername?: string
   avatarUrl: string
+  isHost?: boolean
   isGuest?: boolean
 }
 
@@ -17,8 +19,7 @@ export interface AuthContextValue {
   user: AuthUser | null
   loading: boolean
   devMode: boolean
-  login: () => void
-  devLogin: (username: string, host?: boolean) => void
+  usernameLogin: (username: string, hostCode?: string) => Promise<{ ok: boolean; error?: string }>
   guestLogin: () => void
   logout: () => void
 }
@@ -27,14 +28,14 @@ export const AuthContext = createContext<AuthContextValue | null>(null)
 
 const API_BASE = ""
 
-/** Get the dev token from sessionStorage (per-tab). */
-function getDevToken(): string | null {
-  return sessionStorage.getItem("devToken")
+/** Get the auth token from sessionStorage (per-tab). */
+function getAuthToken(): string | null {
+  return sessionStorage.getItem("authToken") ?? sessionStorage.getItem("devToken")
 }
 
-/** Build headers that include the dev token if present. */
+/** Build headers that include the auth token if present. */
 function authHeaders(): Record<string, string> {
-  const token = getDevToken()
+  const token = getAuthToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -71,31 +72,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchMe()
   }, [fetchMe])
 
-  const login = useCallback(() => {
-    window.location.href = `${API_BASE}/auth/discord`
-  }, [])
-
-  const devLogin = useCallback(async (username: string, host = false) => {
+  const usernameLogin = useCallback(async (username: string, hostCode = "") => {
     try {
-      const params = new URLSearchParams({ username })
-      if (host) params.set("host", "true")
-
-      const res = await fetch(`${API_BASE}/auth/dev?${params.toString()}`, {
+      const res = await fetch(`${API_BASE}/auth/username`, {
+        method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          ...(hostCode.trim() ? { hostCode: hostCode.trim() } : {}),
+        }),
       })
+      const data = await res.json().catch(() => null) as
+        | { token?: string; user?: AuthUser; error?: string }
+        | null
 
       if (!res.ok) {
-        console.error("Dev login failed")
-        return
+        return { ok: false, error: data?.error ?? "Login failed" }
       }
 
-      const data = await res.json() as { token: string; user: AuthUser }
+      if (!data?.token || !data.user) {
+        return { ok: false, error: "Login failed" }
+      }
 
-      // Store token in sessionStorage (per-tab, not shared across tabs)
-      sessionStorage.setItem("devToken", data.token)
+      // Store token in sessionStorage (per-tab, not shared across tabs).
+      sessionStorage.setItem("authToken", data.token)
+      sessionStorage.removeItem("devToken")
       setUser(data.user)
+      return { ok: true }
     } catch (err) {
-      console.error("Dev login error:", err)
+      console.error("Username login error:", err)
+      return { ok: false, error: "Login failed" }
     }
   }, [])
 
@@ -109,7 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
       const data = await res.json() as { token: string; user: AuthUser }
-      sessionStorage.setItem("devToken", data.token)
+      sessionStorage.setItem("authToken", data.token)
+      sessionStorage.removeItem("devToken")
       setUser(data.user)
     } catch (err) {
       console.error("Guest login error:", err)
@@ -117,12 +125,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    sessionStorage.removeItem("authToken")
     sessionStorage.removeItem("devToken")
     window.location.href = `${API_BASE}/auth/logout`
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, devMode, login, devLogin, guestLogin, logout }}>
+    <AuthContext.Provider value={{ user, loading, devMode, usernameLogin, guestLogin, logout }}>
       {children}
     </AuthContext.Provider>
   )

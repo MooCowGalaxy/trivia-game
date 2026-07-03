@@ -71,10 +71,23 @@ const RushHourParamsSchema = z.object({
   minTargetRowBlockers: z.number().int().min(0).optional(),
 });
 
+const NurikabeParamsSchema = z.object({
+  rows: z.number().int().min(2),
+  cols: z.number().int().min(2),
+  winnerCount: z.number().int(),
+  minWhiteRegions: z.number().int().min(1).optional(),
+  maxWhiteRegions: z.number().int().min(1).optional(),
+  minRegionSize: z.number().int().min(1).optional(),
+  maxRegionSize: z.number().int().min(1).optional(),
+  lockRatio: z.number().min(0).max(1).optional(),
+  minLockedCells: z.number().int().min(0).optional(),
+  maxLockedCells: z.number().int().min(0).optional(),
+});
+
 const RoundConfigSchema = z
   .object({
     roundNumber: z.number().int().positive(),
-    type: z.enum(['speed_math', 'fifteen', 'flow_connect', 'pipe_rotation', 'rush_hour', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
+    type: z.enum(['speed_math', 'fifteen', 'flow_connect', 'pipe_rotation', 'rush_hour', 'nurikabe', 'pattern', 'visual_spatial', 'mixed_logic_fermi']),
     title: z.string(),
     description: z.string().optional(),
     typeLabel: z.string().optional(),
@@ -87,6 +100,7 @@ const RoundConfigSchema = z
     flowConnectParams: FlowConnectParamsSchema.optional(),
     pipeRotationParams: PipeRotationParamsSchema.optional(),
     rushHourParams: RushHourParamsSchema.optional(),
+    nurikabeParams: NurikabeParamsSchema.optional(),
     categorySource: CategorySourceSchema.optional(),
   })
   .superRefine((round, ctx) => {
@@ -166,6 +180,44 @@ const RoundConfigSchema = z
           code: z.ZodIssueCode.custom,
           message: `Round ${round.roundNumber} (rush_hour) has invalid vehicle move bounds`,
           path: ['rushHourParams'],
+        });
+      }
+    } else if (round.type === 'nurikabe') {
+      if (!round.nurikabeParams) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (nurikabe) requires nurikabeParams`,
+          path: ['nurikabeParams'],
+        });
+      } else if (
+        round.nurikabeParams.minWhiteRegions &&
+        round.nurikabeParams.maxWhiteRegions &&
+        round.nurikabeParams.maxWhiteRegions < round.nurikabeParams.minWhiteRegions
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (nurikabe) has invalid white region bounds`,
+          path: ['nurikabeParams'],
+        });
+      } else if (
+        round.nurikabeParams.minRegionSize &&
+        round.nurikabeParams.maxRegionSize &&
+        round.nurikabeParams.maxRegionSize < round.nurikabeParams.minRegionSize
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (nurikabe) has invalid region size bounds`,
+          path: ['nurikabeParams'],
+        });
+      } else if (
+        round.nurikabeParams.minLockedCells !== undefined &&
+        round.nurikabeParams.maxLockedCells !== undefined &&
+        round.nurikabeParams.maxLockedCells < round.nurikabeParams.minLockedCells
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Round ${round.roundNumber} (nurikabe) has invalid locked cell bounds`,
+          path: ['nurikabeParams'],
         });
       }
     } else {

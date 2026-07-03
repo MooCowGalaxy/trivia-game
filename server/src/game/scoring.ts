@@ -1,6 +1,7 @@
 import type {
   FifteenPlayerState,
   FlowConnectPlayerState,
+  NurikabePlayerState,
   PipeRotationPlayerState,
   PlayerSubmission,
   RushHourPlayerState,
@@ -126,6 +127,15 @@ export function scorePipeRotationRound(
 
 export function scoreRushHourRound(
   playerStates: Map<string, RushHourPlayerState>,
+  basePoints: number,
+  speedBonusMax: number,
+  winnerCount: number,
+): Map<string, number> {
+  return scoreRankedPuzzleRound(playerStates, basePoints, speedBonusMax, winnerCount);
+}
+
+export function scoreNurikabeRound(
+  playerStates: Map<string, NurikabePlayerState>,
   basePoints: number,
   speedBonusMax: number,
   winnerCount: number,

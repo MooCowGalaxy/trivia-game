@@ -20,6 +20,7 @@ export type GameStateName =
   | "FLOW_CONNECT_ACTIVE"
   | "PIPE_ROTATION_ACTIVE"
   | "RUSH_HOUR_ACTIVE"
+  | "NURIKABE_ACTIVE"
   | "FINALE_INTRO"
   | "FINALE_QUESTION"
   | "FINALE_REVEAL"
@@ -146,6 +147,34 @@ export interface RushHourState {
   optimalVehicleMoves: number
 }
 
+export type NurikabeCellColor = "black" | "white"
+export type NurikabeInitialCell = NurikabeCellColor | "empty"
+
+export interface NurikabeCoordinate {
+  row: number
+  col: number
+}
+
+export interface NurikabeClue extends NurikabeCoordinate {
+  size: number
+}
+
+export interface NurikabeLockedCell extends NurikabeCoordinate {
+  color: NurikabeCellColor
+}
+
+export interface NurikabeState {
+  rows: number
+  cols: number
+  initial: NurikabeInitialCell[][]
+  clues: NurikabeClue[]
+  lockedCells: NurikabeLockedCell[]
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
 export interface PublicGameState {
   gameId: string
   hostDiscordId: string
@@ -158,6 +187,7 @@ export interface PublicGameState {
   timerRemainingMs: number | null
   progressBar: { completed: number; total: number }
   finaleState: FinaleState | null
+  winnerVerification: { code: string; rank: number } | null
 
   // Unified view data
   questionImageData: string | null
@@ -174,6 +204,7 @@ export interface PublicGameState {
   flowConnectState: FlowConnectState | null
   pipeRotationState: PipeRotationState | null
   rushHourState: RushHourState | null
+  nurikabeState: NurikabeState | null
 }
 
 export interface SubmissionCount {
@@ -247,6 +278,19 @@ export interface RushHourResult {
   reason?: string
 }
 
+export interface NurikabeProgress {
+  playerId: string
+  completed: boolean
+  completedCount: number
+  winnerCount: number
+  totalPlayers: number
+}
+
+export interface NurikabeResult {
+  completed: boolean
+  reason?: string
+}
+
 export interface LeaderboardUpdate {
   previous: LeaderboardEntry[]
   current: LeaderboardEntry[]
@@ -267,6 +311,8 @@ export interface GameContextValue {
   pipeRotationResult: PipeRotationResult | null
   rushHourProgress: RushHourProgress | null
   rushHourResult: RushHourResult | null
+  nurikabeProgress: NurikabeProgress | null
+  nurikabeResult: NurikabeResult | null
   timerRemainingMs: number | null
   leaderboard: LeaderboardEntry[]
   leaderboardUpdate: LeaderboardUpdate | null
@@ -301,6 +347,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     useState<RushHourProgress | null>(null)
   const [rushHourResult, setRushHourResult] =
     useState<RushHourResult | null>(null)
+  const [nurikabeProgress, setNurikabeProgress] =
+    useState<NurikabeProgress | null>(null)
+  const [nurikabeResult, setNurikabeResult] =
+    useState<NurikabeResult | null>(null)
   const [timerRemainingMs, setTimerRemainingMs] = useState<number | null>(null)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [leaderboardUpdate, setLeaderboardUpdate] = useState<LeaderboardUpdate | null>(null)
@@ -365,6 +415,18 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
           setRushHourProgress(null)
           setRushHourResult(null)
         }
+        if (state.nurikabeState) {
+          setNurikabeProgress({
+            playerId: "",
+            completed: state.nurikabeState.completed,
+            completedCount: state.nurikabeState.completedCount,
+            winnerCount: state.nurikabeState.winnerCount,
+            totalPlayers: state.nurikabeState.totalPlayers,
+          })
+        } else {
+          setNurikabeProgress(null)
+          setNurikabeResult(null)
+        }
         // Clear leaderboard update when leaving reveal/results states
         // (so reconnecting users don't see stale animation data)
         if (
@@ -418,6 +480,10 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       setRushHourProgress(data)
     }
 
+    const handleNurikabeProgress = (data: NurikabeProgress) => {
+      setNurikabeProgress(data)
+    }
+
     const handleLeaderboardUpdate = (data: LeaderboardUpdate) => {
       setLeaderboard(data.current)
       setLeaderboardUpdate(data)
@@ -452,12 +518,23 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       setRushHourResult(data)
     }
 
+    const handleNurikabeResult = (data: NurikabeResult) => {
+      setNurikabeResult(data)
+    }
+
     const handleConnect = () => {
       console.log("[socket] connected:", socket.id)
     }
 
     const handleConnectError = (err: Error) => {
       console.error("[socket] connect_error:", err.message)
+    }
+
+    const handleAuthError = (data: { error?: string }) => {
+      console.error("[socket] auth_error:", data.error ?? "Authentication failed")
+      sessionStorage.removeItem("authToken")
+      sessionStorage.removeItem("devToken")
+      setGameState(null)
     }
 
     socket.on("game:state_change", handleStateChange)
@@ -468,6 +545,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     socket.on("game:flow_connect_progress", handleFlowConnectProgress)
     socket.on("game:pipe_rotation_progress", handlePipeRotationProgress)
     socket.on("game:rush_hour_progress", handleRushHourProgress)
+    socket.on("game:nurikabe_progress", handleNurikabeProgress)
     socket.on("game:leaderboard_update", handleLeaderboardUpdate)
     socket.on("game:players_sync", handlePlayersSync)
     socket.on("player:speed_math_result", handleSpeedMathResult)
@@ -475,6 +553,8 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     socket.on("player:flow_connect_result", handleFlowConnectResult)
     socket.on("player:pipe_rotation_result", handlePipeRotationResult)
     socket.on("player:rush_hour_result", handleRushHourResult)
+    socket.on("player:nurikabe_result", handleNurikabeResult)
+    socket.on("auth:error", handleAuthError)
     socket.on("connect", handleConnect)
     socket.on("connect_error", handleConnectError)
 
@@ -505,6 +585,7 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("game:flow_connect_progress", handleFlowConnectProgress)
       socket.off("game:pipe_rotation_progress", handlePipeRotationProgress)
       socket.off("game:rush_hour_progress", handleRushHourProgress)
+      socket.off("game:nurikabe_progress", handleNurikabeProgress)
       socket.off("game:leaderboard_update", handleLeaderboardUpdate)
       socket.off("game:players_sync", handlePlayersSync)
       socket.off("player:speed_math_result", handleSpeedMathResult)
@@ -512,6 +593,8 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
       socket.off("player:flow_connect_result", handleFlowConnectResult)
       socket.off("player:pipe_rotation_result", handlePipeRotationResult)
       socket.off("player:rush_hour_result", handleRushHourResult)
+      socket.off("player:nurikabe_result", handleNurikabeResult)
+      socket.off("auth:error", handleAuthError)
       socket.disconnect()
     }
   }, [authenticated])
@@ -529,6 +612,8 @@ export function GameProvider({ children, authenticated }: { children: ReactNode;
     pipeRotationResult,
     rushHourProgress,
     rushHourResult,
+    nurikabeProgress,
+    nurikabeResult,
     timerRemainingMs,
     leaderboard,
     leaderboardUpdate,

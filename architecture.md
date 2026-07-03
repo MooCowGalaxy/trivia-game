@@ -4,7 +4,7 @@
 
 - **Server**: Express + Socket.io (TypeScript, Node.js)
 - **Client**: Vite + React (TypeScript), shadcn/ui components
-- **Auth**: Discord OAuth2 + JWT (httpOnly cookies), dev mode with username-only login, guest spectator access
+- **Auth**: Username-only Discord identity + JWT, private host code, guest spectator access
 - **State**: All game state in-memory (no database)
 
 ## Project Structure
@@ -14,7 +14,7 @@ server/
 ├── src/
 │   ├── index.ts                 # Express + Socket.io bootstrap, connection handler
 │   ├── auth/
-│   │   └── discord.ts           # Discord OAuth2, dev login, guest login
+│   │   └── username.ts          # Username login, host-code login, dev login, guest login
 │   ├── game/
 │   │   ├── engine.ts            # Core state machine (GameEngine class)
 │   │   ├── scoring.ts           # Scoring algorithms per round type
@@ -146,11 +146,14 @@ No question text or answers are ever sent to the client as raw data. The client 
 
 ## Auth Flow
 
-1. Player clicks "Join with Discord" or enters username in dev mode
-2. Server issues JWT containing discordId, username, avatarUrl, isHost
-3. JWT stored in httpOnly cookie + used as socket auth token
-4. Host is identified by matching discordId against the config's hostDiscordId (or auto-assigned in dev mode)
+1. Player enters the Discord username they would claim with
+2. Server validates the username, rejects blocked/duplicate names, optionally classifies it with OpenRouter, and issues a JWT containing discordId, username, normalizedUsername, avatarUrl, and optional isHost
+3. JWT is stored per-tab and used as the socket auth token
+4. Host is identified by a private host code that assigns the current hostDiscordId; the host-code field is only shown when the app is opened with `?host=1`
+5. Winners receive private 8-character verification codes at game over
+
+Optional username moderation is enabled when `OPENROUTER_API_KEY` is set. The default model is `openai/gpt-5.4-nano`, and it can be overridden with `OPENROUTER_USERNAME_MODERATION_MODEL` or `OPENROUTER_MODEL`. `USERNAME_MODERATION_TIMEOUT_MS` controls the timeout, `USERNAME_MODERATION_MAX_TOKENS` defaults to 16, `USERNAME_MODERATION_TEMPERATURE` can opt into a temperature value, and `USERNAME_MODERATION_ENABLED=false` disables the OpenRouter check.
 
 ## Deployment
 
-Single server process. Express serves the API, socket connections, and the Vite-built static frontend. No database, no external dependencies beyond Discord OAuth. Config is loaded at startup from a JSON file specified by the `GAME_CONFIG` env var.
+Single server process. Express serves the API, socket connections, and the Vite-built static frontend. No database. Config is loaded at startup from a JSON file specified by the `GAME_CONFIG` env var.

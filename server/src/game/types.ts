@@ -12,6 +12,7 @@ export enum GameState {
   FLOW_CONNECT_ACTIVE = 'FLOW_CONNECT_ACTIVE',
   PIPE_ROTATION_ACTIVE = 'PIPE_ROTATION_ACTIVE',
   RUSH_HOUR_ACTIVE = 'RUSH_HOUR_ACTIVE',
+  NURIKABE_ACTIVE = 'NURIKABE_ACTIVE',
   FINALE_INTRO = 'FINALE_INTRO',
   FINALE_QUESTION = 'FINALE_QUESTION',
   FINALE_REVEAL = 'FINALE_REVEAL',
@@ -26,6 +27,7 @@ export type RoundType =
   | 'flow_connect'
   | 'pipe_rotation'
   | 'rush_hour'
+  | 'nurikabe'
   | 'pattern'
   | 'visual_spatial'
   | 'mixed_logic_fermi';
@@ -90,6 +92,19 @@ export interface RushHourParams {
   minTargetRowBlockers?: number;
 }
 
+export interface NurikabeParams {
+  rows: number;
+  cols: number;
+  winnerCount: number;
+  minWhiteRegions?: number;
+  maxWhiteRegions?: number;
+  minRegionSize?: number;
+  maxRegionSize?: number;
+  lockRatio?: number;
+  minLockedCells?: number;
+  maxLockedCells?: number;
+}
+
 export interface QuestionDisplay {
   type: DisplayType;
   src?: string;          // URL or path for image type
@@ -128,6 +143,7 @@ export interface RoundConfig {
   flowConnectParams?: FlowConnectParams;
   pipeRotationParams?: PipeRotationParams;
   rushHourParams?: RushHourParams;
+  nurikabeParams?: NurikabeParams;
   categorySource?: CategorySource;
 }
 
@@ -273,6 +289,38 @@ export interface RushHourRoundState {
   optimalVehicleMoves: number;
 }
 
+// ─── Nurikabe State ─────────────────────────────────────────────────────────
+
+export type NurikabeCellColor = 'black' | 'white';
+export type NurikabeInitialCell = NurikabeCellColor | 'empty';
+
+export interface NurikabeCoordinate {
+  row: number;
+  col: number;
+}
+
+export interface NurikabeClue extends NurikabeCoordinate {
+  size: number;
+}
+
+export interface NurikabeLockedCell extends NurikabeCoordinate {
+  color: NurikabeCellColor;
+}
+
+export interface NurikabePlayerState {
+  completedAt: number | null;
+  rank: number | null;
+}
+
+export interface NurikabeRoundState {
+  rows: number;
+  cols: number;
+  solution: NurikabeCellColor[][];
+  initial: NurikabeInitialCell[][];
+  clues: NurikabeClue[];
+  lockedCells: NurikabeLockedCell[];
+}
+
 // ─── Round State ──────────────────────────────────────────────────────────────
 
 export interface RoundState {
@@ -296,6 +344,10 @@ export interface RoundState {
   rushHourPuzzle: RushHourRoundState | null;
   /** playerId → RushHourPlayerState (only used in rush_hour rounds) */
   rushHourStates: Map<string, RushHourPlayerState>;
+  /** Generated Nurikabe puzzle for the current round. */
+  nurikabePuzzle: NurikabeRoundState | null;
+  /** playerId → NurikabePlayerState (only used in nurikabe rounds) */
+  nurikabeStates: Map<string, NurikabePlayerState>;
 }
 
 // ─── Finale State ─────────────────────────────────────────────────────────────
@@ -336,8 +388,12 @@ export interface GameEngineState {
   generatedPipeRotationPuzzles: Map<number, PipeRotationRoundState>;
   /** Pre-generated Rush Hour puzzles keyed by round index */
   generatedRushHourPuzzles: Map<number, RushHourRoundState>;
+  /** Pre-generated Nurikabe puzzles keyed by round index */
+  generatedNurikabePuzzles: Map<number, NurikabeRoundState>;
   /** playerId → cumulative response time in ms (for tiebreaker) */
   totalResponseTimeMs: Map<string, number>;
+  /** playerId → private winner verification code */
+  winnerVerificationCodes: Map<string, string>;
 }
 
 // ─── Transition Actions ──────────────────────────────────────────────────────

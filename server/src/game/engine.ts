@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   GameState,
 } from './types.js';
@@ -6,6 +7,7 @@ import type {
   GameEngineState,
   GeneratedQuestion,
   FlowConnectRoundState,
+  NurikabeRoundState,
   PipeRotationRoundState,
   Player,
   PlayerSubmission,
@@ -24,6 +26,7 @@ import {
   scoreFlowConnectRound,
   scorePipeRotationRound,
   scoreRushHourRound,
+  scoreNurikabeRound,
   scoreFermiQuestion,
   checkFinaleAnswer,
 } from './scoring.js';
@@ -46,6 +49,12 @@ import {
 import type {
   RushHourMove,
 } from './rushHour.js';
+import {
+  verifyRegionSizeSolution,
+} from './regionSize.js';
+import type {
+  RegionSizeColor,
+} from './regionSize.js';
 
 // ─── Broadcast base type (shared state computed once per broadcast) ──────────
 
@@ -120,6 +129,17 @@ export interface BroadcastBase {
     optimalMoves: number;
     optimalVehicleMoves: number;
   } | null;
+  nurikabeState: {
+    rows: number;
+    cols: number;
+    initial: Array<Array<'black' | 'white' | 'empty'>>;
+    clues: Array<{ row: number; col: number; size: number }>;
+    lockedCells: Array<{ row: number; col: number; color: 'black' | 'white' }>;
+    completed: boolean;
+    completedCount: number;
+    winnerCount: number;
+    totalPlayers: number;
+  } | null;
   currentQuestion: {
     id: string;
     display?: { type: string; src?: string };
@@ -140,6 +160,7 @@ export interface BroadcastBase {
   questionOptions: string[] | null;
   questionTimerSeconds: number | null;
   revealAnswer: string | number | null;
+  winnerVerification: { code: string; rank: number } | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -156,6 +177,8 @@ function freshRoundState(): RoundState {
     pipeRotationStates: new Map(),
     rushHourPuzzle: null,
     rushHourStates: new Map(),
+    nurikabePuzzle: null,
+    nurikabeStates: new Map(),
   };
 }
 
@@ -167,6 +190,14 @@ function freshFinaleState(finalistIds: string[] = []): FinaleState {
     finalists: finalistIds,
     winnerId: null,
   };
+}
+
+function normalizeUsernameForComparison(username: string): string {
+  return username.trim().toLowerCase();
+}
+
+function makeWinnerVerificationCode(): string {
+  return randomBytes(4).toString('hex');
 }
 
 function cloneFlowConnectPuzzle(puzzle: FlowConnectRoundState): FlowConnectRoundState {
@@ -204,6 +235,17 @@ function cloneRushHourPuzzle(puzzle: RushHourRoundState): RushHourRoundState {
   };
 }
 
+function cloneNurikabePuzzle(puzzle: NurikabeRoundState): NurikabeRoundState {
+  return {
+    rows: puzzle.rows,
+    cols: puzzle.cols,
+    solution: puzzle.solution.map((row) => [...row]),
+    initial: puzzle.initial.map((row) => [...row]),
+    clues: puzzle.clues.map((clue) => ({ ...clue })),
+    lockedCells: puzzle.lockedCells.map((cell) => ({ ...cell })),
+  };
+}
+
 // ─── Game Engine ─────────────────────────────────────────────────────────────
 
 export class GameEngine {
@@ -216,6 +258,7 @@ export class GameEngine {
     generatedFlowConnectPuzzles?: Map<number, FlowConnectRoundState>,
     generatedPipeRotationPuzzles?: Map<number, PipeRotationRoundState>,
     generatedRushHourPuzzles?: Map<number, RushHourRoundState>,
+    generatedNurikabePuzzles?: Map<number, NurikabeRoundState>,
   ) {
     this.state = {
       gameId: config.gameId,
@@ -235,7 +278,9 @@ export class GameEngine {
       generatedFlowConnectPuzzles: generatedFlowConnectPuzzles ?? new Map(),
       generatedPipeRotationPuzzles: generatedPipeRotationPuzzles ?? new Map(),
       generatedRushHourPuzzles: generatedRushHourPuzzles ?? new Map(),
+      generatedNurikabePuzzles: generatedNurikabePuzzles ?? new Map(),
       totalResponseTimeMs: new Map(),
+      winnerVerificationCodes: new Map(),
     };
   }
 
@@ -249,6 +294,16 @@ export class GameEngine {
       existing.username = username;
       existing.avatarUrl = avatarUrl;
       return existing;
+    }
+
+    const normalizedUsername = normalizeUsernameForComparison(username);
+    for (const [otherId, player] of this.state.players) {
+      if (
+        otherId !== id &&
+        normalizeUsernameForComparison(player.username) === normalizedUsername
+      ) {
+        throw new Error('That username is already in the game');
+      }
     }
 
     const player: Player = {
@@ -297,9 +352,39 @@ export class GameEngine {
         moveCount: null,
         rank: null,
       });
+    } else if (this.state.currentState === GameState.NURIKABE_ACTIVE) {
+      const roundState = this.getCurrentRoundState();
+      roundState.nurikabeStates.set(id, {
+        completedAt: null,
+        rank: null,
+      });
     }
 
     return player;
+  }
+
+  isUsernameInUse(normalizedUsername: string): boolean {
+    const normalized = normalizeUsernameForComparison(normalizedUsername);
+    for (const player of this.state.players.values()) {
+      if (normalizeUsernameForComparison(player.username) === normalized) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  kickPlayer(id: string): { ok: boolean; reason?: string; player?: Player } {
+    if (id === this.state.config.settings.hostDiscordId) {
+      return { ok: false, reason: 'Cannot kick the host' };
+    }
+
+    const player = this.state.players.get(id);
+    if (!player) {
+      return { ok: false, reason: 'Unknown player' };
+    }
+
+    this.removePlayerEverywhere(id);
+    return { ok: true, player };
   }
 
   /**
@@ -367,6 +452,10 @@ export class GameEngine {
           this.initRushHourRound();
           this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
           this.setState(GameState.RUSH_HOUR_ACTIVE);
+        } else if (this.getCurrentRoundConfig().type === 'nurikabe') {
+          this.initNurikabeRound();
+          this.startTimer(this.getCurrentRoundConfig().timerSeconds * 1000);
+          this.setState(GameState.NURIKABE_ACTIVE);
         } else {
           // Go to countdown first, then QUESTION_ACTIVE after countdown expires
           this.startTimer(3000); // 3 second countdown
@@ -937,6 +1026,95 @@ export class GameEngine {
     };
   }
 
+  // ── Solve Submission (Nurikabe) ────────────────────────────────────────
+
+  submitNurikabeSolve(
+    playerId: string,
+    board: RegionSizeColor[][],
+  ): { accepted: boolean; reason?: string; completedCount: number; winnerCount: number } {
+    if (this.state.currentState !== GameState.NURIKABE_ACTIVE) {
+      return {
+        accepted: false,
+        reason: 'Nurikabe is not active',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    if (!this.state.players.has(playerId)) {
+      return {
+        accepted: false,
+        reason: 'Unknown player',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    if (this.isTimerExpired()) {
+      return {
+        accepted: false,
+        reason: 'Timer has expired',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const playerState = roundState.nurikabeStates.get(playerId);
+    if (!playerState) {
+      return {
+        accepted: false,
+        reason: 'Player not found in Nurikabe state',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+    if (playerState.completedAt !== null) {
+      return {
+        accepted: false,
+        reason: 'Player already completed the puzzle',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    const puzzle = roundState.nurikabePuzzle;
+    if (!puzzle) {
+      return {
+        accepted: false,
+        reason: 'No Nurikabe puzzle for this round',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    const verification = verifyRegionSizeSolution(
+      puzzle.rows,
+      puzzle.cols,
+      puzzle.clues,
+      puzzle.lockedCells,
+      board,
+    );
+    if (!verification.valid) {
+      return {
+        accepted: false,
+        reason: verification.reason ?? 'Invalid solve',
+        completedCount: this.getNurikabeCompletedCount(),
+        winnerCount: this.getNurikabeWinnerCount(),
+      };
+    }
+
+    const rank = this.getNurikabeCompletedCount() + 1;
+    playerState.completedAt = Date.now();
+    playerState.rank = rank;
+
+    return {
+      accepted: true,
+      completedCount: this.getNurikabeCompletedCount(),
+      winnerCount: this.getNurikabeWinnerCount(),
+    };
+  }
+
   // ── Timer Expiry ───────────────────────────────────────────────────────
 
   endTimer(): void {
@@ -979,6 +1157,11 @@ export class GameEngine {
 
       case GameState.RUSH_HOUR_ACTIVE:
         this.scoreRushHourRound(timerStartedAt, timerDurationMs);
+        this.setState(GameState.ROUND_RESULTS);
+        break;
+
+      case GameState.NURIKABE_ACTIVE:
+        this.scoreNurikabeRound(timerStartedAt, timerDurationMs);
         this.setState(GameState.ROUND_RESULTS);
         break;
 
@@ -1142,6 +1325,20 @@ export class GameEngine {
     this.addPuzzleResponseTimes(roundState.rushHourStates, timerStartedAt, timerDurationMs);
   }
 
+  private scoreNurikabeRound(timerStartedAt: number | null, timerDurationMs: number | null): void {
+    const round = this.getCurrentRoundConfig();
+    const roundState = this.getCurrentRoundState();
+    const questionScores = scoreNurikabeRound(
+      roundState.nurikabeStates,
+      round.basePoints,
+      round.speedBonusMax,
+      this.getNurikabeWinnerCount(),
+    );
+
+    this.applyScores(questionScores, this.getNurikabeRoundId());
+    this.addPuzzleResponseTimes(roundState.nurikabeStates, timerStartedAt, timerDurationMs);
+  }
+
   private addPuzzleResponseTimes(
     playerStates: Map<string, { completedAt: number | null }>,
     timerStartedAt: number | null,
@@ -1275,7 +1472,8 @@ export class GameEngine {
       round.type === 'fifteen' ||
       round.type === 'flow_connect' ||
       round.type === 'pipe_rotation' ||
-      round.type === 'rush_hour'
+      round.type === 'rush_hour' ||
+      round.type === 'nurikabe'
     );
   }
 
@@ -1299,6 +1497,34 @@ export class GameEngine {
   getFinalists(): LeaderboardEntry[] {
     const topN = this.state.config.settings.finaleTopN;
     return this.getLeaderboard().slice(0, topN);
+  }
+
+  getPrizeWinners(): LeaderboardEntry[] {
+    return this.getLeaderboard().slice(0, 3);
+  }
+
+  verifyWinnerCode(
+    username: string,
+    code: string,
+  ): { valid: boolean; username?: string; rank?: number } {
+    const normalizedUsername = normalizeUsernameForComparison(username);
+    const normalizedCode = code.trim().toLowerCase();
+    const winners = this.getPrizeWinners();
+
+    for (let i = 0; i < winners.length; i++) {
+      const winner = winners[i]!;
+      const player = this.state.players.get(winner.playerId);
+      const expectedCode = this.state.winnerVerificationCodes.get(winner.playerId);
+      if (!player || !expectedCode) continue;
+      if (
+        normalizeUsernameForComparison(player.username) === normalizedUsername &&
+        expectedCode === normalizedCode
+      ) {
+        return { valid: true, username: player.username, rank: i + 1 };
+      }
+    }
+
+    return { valid: false };
   }
 
   /** Check if all connected players have submitted an answer for the current question. */
@@ -1457,6 +1683,36 @@ export class GameEngine {
     };
   }
 
+  getNurikabeCompletedCount(): number {
+    const roundState = this.getCurrentRoundState();
+    return this.getActiveParticipantIds()
+      .filter((playerId) => roundState.nurikabeStates.get(playerId)?.completedAt !== null)
+      .length;
+  }
+
+  getNurikabeWinnerCount(): number {
+    const round = this.getCurrentRoundConfig();
+    return round.nurikabeParams?.winnerCount ?? 1;
+  }
+
+  shouldEndNurikabeRound(): boolean {
+    const winnerCount = this.getNurikabeWinnerCount();
+    if (this.state.currentState !== GameState.NURIKABE_ACTIVE) return false;
+    const completedCount = this.getNurikabeCompletedCount();
+    if (winnerCount > 0) return completedCount >= winnerCount;
+    const activeParticipants = this.getActiveParticipantIds();
+    return activeParticipants.length > 0 && completedCount >= activeParticipants.length;
+  }
+
+  getNurikabeProgress(): { completedCount: number; winnerCount: number; totalPlayers: number } {
+    const totalPlayers = this.getActiveParticipantIds().length;
+    return {
+      completedCount: this.getNurikabeCompletedCount(),
+      winnerCount: this.getNurikabeWinnerCount(),
+      totalPlayers,
+    };
+  }
+
   getPlayers(): Map<string, Player> {
     return this.state.players;
   }
@@ -1521,6 +1777,7 @@ export class GameEngine {
     } | null;
     pipeRotationState: BroadcastBase['pipeRotationState'];
     rushHourState: BroadcastBase['rushHourState'];
+    nurikabeState: BroadcastBase['nurikabeState'];
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -1535,6 +1792,7 @@ export class GameEngine {
       finalists: string[];
       winnerId: string | null;
     } | null;
+    winnerVerification: { code: string; rank: number } | null;
   } {
     const round = this.safeGetCurrentRound();
     const question = this.safeGetCurrentPublicQuestion();
@@ -1566,6 +1824,7 @@ export class GameEngine {
       flowConnectState: this.getPublicFlowConnectState(null),
       pipeRotationState: this.getPublicPipeRotationState(null),
       rushHourState: this.getPublicRushHourState(null),
+      nurikabeState: this.getPublicNurikabeState(null),
       currentQuestion: question,
       timerRemainingMs: this.getTimerRemainingMs(),
       progressBar: this.getProgressBar(),
@@ -1581,6 +1840,7 @@ export class GameEngine {
               winnerId: this.state.finaleState.winnerId,
             }
           : null,
+      winnerVerification: null,
     };
   }
 
@@ -1639,7 +1899,8 @@ export class GameEngine {
       st === GameState.FIFTEEN_ACTIVE ||
       st === GameState.FLOW_CONNECT_ACTIVE ||
       st === GameState.PIPE_ROTATION_ACTIVE ||
-      st === GameState.RUSH_HOUR_ACTIVE
+      st === GameState.RUSH_HOUR_ACTIVE ||
+      st === GameState.NURIKABE_ACTIVE
     ) {
       questionTimerSeconds = this.getCurrentRoundConfig().timerSeconds;
     }
@@ -1683,6 +1944,8 @@ export class GameEngine {
     let flowConnectState = broadcastBase.flowConnectState;
     let pipeRotationState = broadcastBase.pipeRotationState;
     let rushHourState = broadcastBase.rushHourState;
+    let nurikabeState = broadcastBase.nurikabeState;
+    let winnerVerification: { code: string; rank: number } | null = null;
 
     const isQuestionActive = st === GameState.QUESTION_ACTIVE;
     const isQuestionReveal = st === GameState.QUESTION_REVEAL;
@@ -1768,6 +2031,10 @@ export class GameEngine {
       rushHourState = this.getPublicRushHourState(playerId);
     }
 
+    if (st === GameState.NURIKABE_ACTIVE) {
+      nurikabeState = this.getPublicNurikabeState(playerId);
+    }
+
     // Round results points
     if (st === GameState.ROUND_RESULTS && playerId) {
       const roundScoreMap = this.state.roundScores.get(this.state.currentRoundIndex);
@@ -1794,7 +2061,8 @@ export class GameEngine {
           roundConfig.type === 'fifteen' ||
           roundConfig.type === 'flow_connect' ||
           roundConfig.type === 'pipe_rotation' ||
-          roundConfig.type === 'rush_hour'
+          roundConfig.type === 'rush_hour' ||
+          roundConfig.type === 'nurikabe'
         ) {
           roundPointsBreakdown = {
             base: Math.min(total, roundConfig.basePoints),
@@ -1804,6 +2072,10 @@ export class GameEngine {
           roundPointsBreakdown = { base: total, speedBonus: 0 };
         }
       }
+    }
+
+    if (st === GameState.GAME_OVER && playerId) {
+      winnerVerification = this.getWinnerVerificationForPlayer(playerId);
     }
 
     return {
@@ -1816,6 +2088,8 @@ export class GameEngine {
       flowConnectState,
       pipeRotationState,
       rushHourState,
+      nurikabeState,
+      winnerVerification,
     };
   }
 
@@ -1873,6 +2147,7 @@ export class GameEngine {
     } | null;
     pipeRotationState: BroadcastBase['pipeRotationState'];
     rushHourState: BroadcastBase['rushHourState'];
+    nurikabeState: BroadcastBase['nurikabeState'];
     currentQuestion: {
       id: string;
       display?: { type: string; src?: string };
@@ -1902,6 +2177,7 @@ export class GameEngine {
       totalQuestions: number;
       completed: boolean;
     } | null;
+    winnerVerification: { code: string; rank: number } | null;
   } {
     const broadcastBase = this.computeBroadcastBase(getImageData);
     return this.getPlayerOverlay(playerId, broadcastBase);
@@ -1922,6 +2198,73 @@ export class GameEngine {
 
   // ── Private Helpers ────────────────────────────────────────────────────
 
+  private removePlayerEverywhere(playerId: string): void {
+    this.state.players.delete(playerId);
+    this.state.scores.delete(playerId);
+    this.state.totalResponseTimeMs.delete(playerId);
+    this.state.winnerVerificationCodes.delete(playerId);
+
+    for (const roundState of this.state.roundStates) {
+      roundState.speedMathStates.delete(playerId);
+      roundState.fifteenStates.delete(playerId);
+      roundState.flowConnectStates.delete(playerId);
+      roundState.pipeRotationStates.delete(playerId);
+      roundState.rushHourStates.delete(playerId);
+      roundState.nurikabeStates.delete(playerId);
+
+      for (const [questionId, submissions] of roundState.submissions) {
+        roundState.submissions.set(
+          questionId,
+          submissions.filter((submission) => submission.playerId !== playerId),
+        );
+      }
+    }
+
+    for (const [, roundScores] of this.state.roundScores) {
+      for (const [, questionScores] of roundScores) {
+        questionScores.delete(playerId);
+      }
+    }
+
+    this.state.finaleState.wins.delete(playerId);
+    this.state.finaleState.finalists = this.state.finaleState.finalists.filter(
+      (id) => id !== playerId,
+    );
+    if (this.state.finaleState.winnerId === playerId) {
+      this.state.finaleState.winnerId = null;
+    }
+    for (const [questionId, submissions] of this.state.finaleState.submissions) {
+      this.state.finaleState.submissions.set(
+        questionId,
+        submissions.filter((submission) => submission.playerId !== playerId),
+      );
+    }
+  }
+
+  private ensureWinnerVerificationCodes(): void {
+    const winners = this.getPrizeWinners();
+    for (const winner of winners) {
+      if (!this.state.winnerVerificationCodes.has(winner.playerId)) {
+        this.state.winnerVerificationCodes.set(
+          winner.playerId,
+          makeWinnerVerificationCode(),
+        );
+      }
+    }
+  }
+
+  private getWinnerVerificationForPlayer(
+    playerId: string,
+  ): { code: string; rank: number } | null {
+    const code = this.state.winnerVerificationCodes.get(playerId);
+    if (!code) return null;
+
+    const rank = this.getPrizeWinners().findIndex((entry) => entry.playerId === playerId);
+    if (rank === -1) return null;
+
+    return { code, rank: rank + 1 };
+  }
+
   private assertHost(hostId: string): void {
     if (hostId !== this.state.config.settings.hostDiscordId) {
       throw new Error('Only the host can perform this action');
@@ -1938,6 +2281,9 @@ export class GameEngine {
 
   private setState(next: GameState): void {
     this.state.currentState = next;
+    if (next === GameState.GAME_OVER) {
+      this.ensureWinnerVerificationCodes();
+    }
   }
 
   private getCurrentRoundState(): RoundState {
@@ -2030,6 +2376,22 @@ export class GameEngine {
       roundState.rushHourStates.set(playerId, {
         completedAt: null,
         moveCount: null,
+        rank: null,
+      });
+    }
+  }
+
+  private initNurikabeRound(): void {
+    const roundState = this.getCurrentRoundState();
+    const puzzle = this.state.generatedNurikabePuzzles.get(this.state.currentRoundIndex);
+    if (!puzzle) {
+      throw new Error(`No pre-generated Nurikabe puzzle for round index ${this.state.currentRoundIndex}`);
+    }
+    roundState.nurikabePuzzle = cloneNurikabePuzzle(puzzle);
+
+    for (const [playerId] of this.state.players) {
+      roundState.nurikabeStates.set(playerId, {
+        completedAt: null,
         rank: null,
       });
     }
@@ -2167,12 +2529,43 @@ export class GameEngine {
     };
   }
 
+  private getPublicNurikabeState(playerId: string | null): BroadcastBase['nurikabeState'] {
+    if (this.state.currentState !== GameState.NURIKABE_ACTIVE) {
+      return null;
+    }
+
+    const roundState = this.getCurrentRoundState();
+    const puzzle = roundState.nurikabePuzzle;
+    if (!puzzle) {
+      return null;
+    }
+
+    const playerState = playerId ? roundState.nurikabeStates.get(playerId) : null;
+    const progress = this.getNurikabeProgress();
+
+    return {
+      rows: puzzle.rows,
+      cols: puzzle.cols,
+      initial: puzzle.initial.map((row) => [...row]),
+      clues: puzzle.clues.map((clue) => ({ ...clue })),
+      lockedCells: puzzle.lockedCells.map((cell) => ({ ...cell })),
+      completed: playerState?.completedAt !== null && playerState?.completedAt !== undefined,
+      completedCount: progress.completedCount,
+      winnerCount: progress.winnerCount,
+      totalPlayers: progress.totalPlayers,
+    };
+  }
+
   private getPipeRotationRoundId(): string {
     return `pipe_rotation_round_${this.state.currentRoundIndex}`;
   }
 
   private getRushHourRoundId(): string {
     return `rush_hour_round_${this.state.currentRoundIndex}`;
+  }
+
+  private getNurikabeRoundId(): string {
+    return `nurikabe_round_${this.state.currentRoundIndex}`;
   }
 
   private startTimer(durationMs: number): void {
